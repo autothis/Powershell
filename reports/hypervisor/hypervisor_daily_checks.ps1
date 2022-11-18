@@ -1,4 +1,4 @@
-<#
+﻿<#
 .DESCRIPTION
   This is a report to check the health of hypervisors (vmware and rhv).
 .PARAMETER <Parameter_Name>
@@ -22,7 +22,7 @@
 
 # Begin Log
 
-    Start-Transcript -Path "C:\temp\hypervisor_daily_checks$(Get-Date –f yyyy-MM-dd-HHmm).log"
+    Start-Transcript -Path "C:\temp\hypervisor_daily_checks$(Get-Date -f yyyy-MM-dd-HHmm).log"
 
 #---------------------------------------------------------[Initialisations]--------------------------------------------------------
 
@@ -82,6 +82,7 @@
     $vms = @()
     $results = @()
     $hvconns = @()
+    $unhstorage = @()
 
 # Create HTML Header
 
@@ -101,22 +102,33 @@
     
     # Hypervisors
     
+        #$vcenters = @(
+        #    "vcsa01.example.com",
+        #    "vcsa02.example.com"
+        #    )
+
+        #$rhvmgrs = @(
+        #    "rhvm01.example.com",
+        #    "rhvm02.example.com"
+        #    )
+
         $vcenters = @(
-            "vcsa01.example.com",
-            "vcsa02.example.com"
+            "dc3-vcsa01.nowitsolutions.com.au",
+            "dc4-vcsa01.nowitsolutions.com.au"
             )
 
         $rhvmgrs = @(
-            "rhvm01.example.com",
-            "rhvm02.example.com"
+            "qld-ndb2-vm-02.mgmt.spirit.net.au",
+            "dc4-rhvm01.nowitsolutions.com.au"
             )
-    
+
     # SMTP Settings
     
         $smtpServer = “smtp1.nowitsolutions.com.au”
         $smtp = New-Object Net.Mail.SmtpClient($SmtpServer, 25)
         $msgfrom = "hypervisors@example.com"
-        $msgto = "user@example.com"
+        #$msgto = "user@example.com"
+        $msgto = "jperry@nowitsolutions.com.au"
     
 #-----------------------------------------------------------[Functions]------------------------------------------------------------
 
@@ -140,24 +152,27 @@
     # VCSAs
 
         foreach ($vcenter in $vcenters) {
-            $vcsaconn = Connect-VIServer $vcenter -Credential $credential
-            $hvconns += New-Object -TypeName PSObject -Property @{
-                name = $vcsaconn.Name;
-                user = $vcsaconn.User;
-                hypervisor = "vCenter"
-                version = {$Global:DefaultVIServers | where {$_.Name -eq $vcenter} | select Version}
-            }
+            Connect-VIServer $vcenter -Credential $credential
+        }
+        foreach ($vcsaconn in $Global:DefaultVIServers) {
+                $hvconns += New-Object -TypeName PSObject -Property @{
+                    name = $vcsaconn.Name;
+                    user = $vcsaconn.User;
+                    hypervisor = "vCenter"
+                    version = $vcsaconn.version
+                }
         }
 
     # RHV Ovirt-Engine (not required, but closest equivilent and a good test, if this step fails, others are likely to as well)
 
-            foreach ($rhvmgr in $rhvmgrs) {
+        foreach ($rhvmgr in $rhvmgrs) {
             $rhvmgrconn = invoke-restmethod -uri "https://$rhvmgr/ovirt-engine/api" -credential $credential
+            $rhvmgrusr = invoke-restmethod -uri "https://$rhvmgr$($rhvmgrconn.api.authenticated_user.href)" -credential $credential
             $hvconns += New-Object -TypeName PSObject -Property @{
                 name = $rhvmgr;
-                user = $rhvmgrconn.api.authenticated_user;
+                user = $rhvmgrusr.user.principal;
                 hypervisor = $rhvmgrconn.api.product_info.name
-                version = $rhvmgrconn.api.product_info.version;
+                version = $rhvmgrconn.api.product_info.version.full_version;
             }
         }
 
@@ -172,11 +187,6 @@
             $luns = get-vmhost $vmhost | Get-ScsiLun -LunType disk | where {$_.ExtensionData.OperationalState -ne "ok"}
             foreach ($lun in $luns) {
                 $unhstorage =  += New-Object -TypeName PSObject -Property @{
-                    datacenter = {(Get-Datacenter -VMHost $vmhost).name};
-                    cluster = {if($vmhost.ExtensionData.Parent.Type -ne "ClusterComputeResource"){"Stand alone host"} 
-                        else{ 
-                            Get-view -Id $vmhost.ExtensionData.Parent | Select -ExpandProperty Name 
-                        }};
                     host = $vmhost.name;
                     vendor = $lun.vendor;
                     state = $lun.extensiondata.operationalstate;
@@ -188,37 +198,115 @@
 
     # RHV Ovirt-Engine
 
+        # Commented out until i can find a way to determine if a RHV Storage Device is in an unhealthy state.
+        # Can possibly use the $rhvstorage.logical_units.logical_unit.status variable -ne "used"
+    
+        #foreach ($rhvmgr in $rhvmgrs) {
+        #    $rhvhosts = invoke-restmethod -uri "https://$rhvmgr/ovirt-engine/api/hosts" -credential $credential
+        #    foreach ($rhvhost in $rhvhosts.hosts.host) {
+        #        $rhvhostid = $rhvhost.id
+        #        $rhvhoststorage = invoke-restmethod -uri "https://$rhvmgr/ovirt-engine/api/hosts/$rhvhostid/storage" -credential $credential
+        #        foreach ($rhvstorage in $rhvhoststorage.host_storages.host_storage) {
+        #            $storage_domain_id = $rhvstorage.logical_units.logical_unit.storage_domain_id
+        #            $storage_domain = invoke-restmethod -uri "https://$rhvmgr/ovirt-engine/api/storagedomains/$storage_domain_id" -credential $credential
+        #            $unhstorage += New-Object -TypeName PSObject -Property @{
+        #                host = $rhvhost.name;
+        #                vendor = $rhvstorage.logical_units.logical_unit.vendor_id;
+        #                state = "TBD";
+        #                name = $storage_domain.storage_domain.name;
+        #                capacitygb = (([long]$storage_domain.storage_domain.available + [long]$storage_domain.storage_domain.used)/1GB);
+        #                hypervisor = $rhvmgr;
+        #            }
+        #        }
+        #    }
+        #}
 
 
 #-------------------------------------------------------[Build HTML Tables]--------------------------------------------------------
 
 # Build Hypervisor Connection Table
 
+    # Setup HTML Table Section
+
+        $hvconn_html = ”<strong>Hypervisor Connections:</strong>`n <br />”
+        $hvconn_html += ”`n <br />”
+
     # Setup HTML Table & Headings
 
-        $hvconn_html = "<table>`n"
-        $hvconn_html += "    <th style='font-weight:bold'>Name</th>"
-        $hvconn_html += "    <th style='font-weight:bold'>User</th>"
-        $hvconn_html += "    <th style='font-weight:bold'>Hypervisor</th>"
-        $hvconn_html += "    <th style='font-weight:bold'>Version</th>"
+        $hvconn_html += "<table>`n"
+        $hvconn_html += "<th style='font-weight:bold'>Name</th>"
+        $hvconn_html += "<th style='font-weight:bold'>User</th>"
+        $hvconn_html += "<th style='font-weight:bold'>Hypervisor</th>"
+        $hvconn_html += "<th style='font-weight:bold'>Version</th>"
     
     # Populate Table
 
         foreach ($hvconn in $hvconns) {
-            $hvconn_html += "  <tr>`n"
-            $hvconn_html += "    <td>$($hvconn.Name)</td>`n"
-            $hvconn_html += "    <td>$($hvconn.User)</td>`n"
-            $hvconn_html += "    <td>$($hvconn.Hypervisor)</td>`n"
-            $hvconn_html += "    <td>$($hvconn.Version)</td>`n"
-            $hvconn_html += "  </tr>`n"
+            $hvconn_html += "<tr>`n"
+            $hvconn_html += "<td>$($hvconn.Name)</td>`n"
+            $hvconn_html += "<td>$($hvconn.User)</td>`n"
+            $hvconn_html += "<td>$($hvconn.Hypervisor)</td>`n"
+            $hvconn_html += "<td>$($hvconn.Version)</td>`n"
+            $hvconn_html += "</tr>`n"
         }
     
     # Close HTML Table
 
         $hvconn_html += "</table>`n"
+        
+    # Spacing before next HTML section
 
+        $hvconn_html += ”`n <br />”
 
-#---------------------------------------------------------[Logging  Stop]----------------------------------------------------------
+# Build Unhealthy Storage Table
+
+    # Setup HTML Table Section
+
+        $unhstorage_html = ”<strong>Hosts with Unhealthy Storage:</strong>`n <br />”
+        $unhstorage_html += ”`n <br />”
+
+    # Setup HTML Table & Headings
+
+        $unhstorage_html += "<table>`n"
+        $unhstorage_html += "<th style='font-weight:bold'>Host</th>"
+        $unhstorage_html += "<th style='font-weight:bold'>Vendor</th>"
+        $unhstorage_html += "<th style='font-weight:bold'>State</th>"
+        $unhstorage_html += "<th style='font-weight:bold'>Name</th>"
+        $unhstorage_html += "<th style='font-weight:bold'>CapacityGB</th>"
+        $unhstorage_html += "<th style='font-weight:bold'>Hypervisor</th>"
+
+    # Populate Table
+        if ($unhstorage.count -eq 0) {
+                $unhstorage_html += "<tr>`n"
+                $unhstorage_html += "<td>N/A</td>`n"
+                $unhstorage_html += "<td>N/A</td>`n"
+                $unhstorage_html += "<td>N/A</td>`n"
+                $unhstorage_html += "<td>N/A</td>`n"
+                $unhstorage_html += "<td>N/A</td>`n"
+                $unhstorage_html += "<td>N/A/td>`n"
+                $unhstorage_html += "</tr>`n"
+        } else {
+            foreach ($unhs in $unhstorage) {
+                $unhstorage_html += "<tr>`n"
+                $unhstorage_html += "<td>$($unhs.host)</td>`n"
+                $unhstorage_html += "<td>$($unhs.vendor)</td>`n"
+                $unhstorage_html += "<td>$($unhs.state)</td>`n"
+                $unhstorage_html += "<td>$($unhs.name)</td>`n"
+                $unhstorage_html += "<td>$($unhs.capacitygb)</td>`n"
+                $unhstorage_html += "<td>$($unhs.hypervisor)</td>`n"
+                $unhstorage_html += "</tr>`n"
+            }
+        }
+
+    # Close HTML Table
+
+        $unhstorage_html += "</table>`n"
+
+    # Spacing before next HTML section
+
+        $unhstorage_html += ”`n <br />”
+
+#-----------------------------------------------------[Create and Send Email]------------------------------------------------------
 
     $msg = new-object Net.Mail.MailMessage
        
@@ -233,41 +321,9 @@
     #Message Body
     $msg.IsBodyHtml = $true
     $msg.Body=$header
-    $msg.Body+=”<strong>vCenter Connections:</strong>`n <br />”
-    $msg.Body+=”`n <br />”
-    $msg.Body+=$viconn
-    $msg.Body+=”`n <br />”
-    $msg.Body+=”<strong>Hosts with inaccessible USB device:</strong>`n <br />”
-    $msg.Body+=”`n <br />”
-    $msg.Body+=$disusb
-    $msg.Body+=”`n <br />”
-    $msg.Body+=”<strong>VMs with Incompatible Virtual Hardware (HD Audio)</strong>`n <br />”
-    $msg.Body+=”`n <br />”
-    $msg.Body+=$incompathw
-    $msg.Body+=”`n <br />”
-    $msg.Body+=”<strong>Datastores (under 3TB) with less than 100GB free:</strong>`n <br />”
-    $msg.Body+=”`n <br />”
-    $msg.Body+=$ds100result
-    $msg.Body+=”`n <br />”
-    $msg.Body+=”<strong>Datastores (over 3TB) with less than 300GB free:</strong>`n <br />”
-    $msg.Body+=”`n <br />”
-    $msg.Body+=$ds300result
-    $msg.Body+=”`n <br />”
-    $msg.Body+=”<strong>VMs with mounted CDs:</strong>`n <br />”
-    $msg.Body+=”`n <br />”
-    $msg.Body+=$cdresult
-    $msg.Body+=”`n <br />”
-    $msg.Body+=”<strong>Host Alarms:</strong>`n <br />”
-    $msg.Body+=”`n <br />”
-    $msg.Body+=$hsalarms
-    $msg.Body+=”`n <br />”
-    $msg.Body+=”<strong>Datastore Alarms:</strong>`n <br />”
-    $msg.Body+=”`n <br />”
-    $msg.Body+=$dsalarms
-    $msg.Body+=”`n <br />”
-    $msg.Body+=”<strong>Current Snapshots:</strong>`n <br />”
-    $msg.Body+=”`n <br />”
-    $msg.Body+=$snapresult
+    $msg.Body+=$hvconn_html
+    $msg.Body+=$unhstorage_html
+
     
     #Message Subject
     $msg.Subject = “VMware Report”
