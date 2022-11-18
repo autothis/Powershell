@@ -83,6 +83,7 @@
     $results = @()
     $hvconns = @()
     $unhstorage = @()
+    $incompathw = @()
 
 # Create HTML Header
 
@@ -176,6 +177,40 @@
             }
         }
 
+    # Build Hypervisor Connection Table
+
+        # Setup HTML Table Section
+
+            $hvconn_html = ”<strong>Hypervisor Connections:</strong>`n <br />”
+            $hvconn_html += ”`n <br />”
+
+        # Setup HTML Table & Headings
+
+            $hvconn_html += "<table>`n"
+            $hvconn_html += "<th style='font-weight:bold'>Name</th>"
+            $hvconn_html += "<th style='font-weight:bold'>User</th>"
+            $hvconn_html += "<th style='font-weight:bold'>Hypervisor</th>"
+            $hvconn_html += "<th style='font-weight:bold'>Version</th>"
+
+        # Populate Table
+
+            foreach ($hvconn in $hvconns) {
+                $hvconn_html += "<tr>`n"
+                $hvconn_html += "<td>$($hvconn.Name)</td>`n"
+                $hvconn_html += "<td>$($hvconn.User)</td>`n"
+                $hvconn_html += "<td>$($hvconn.Hypervisor)</td>`n"
+                $hvconn_html += "<td>$($hvconn.Version)</td>`n"
+                $hvconn_html += "</tr>`n"
+            }
+        
+        # Close HTML Table
+        
+            $hvconn_html += "</table>`n"
+
+        # Spacing before next HTML section
+        
+            $hvconn_html += ”`n <br />”
+
 #---------------------------------------------------------[Storage Checks]---------------------------------------------------------
 
 # Get Hosts with Unhealthy Storage
@@ -222,89 +257,110 @@
         #}
 
 
-#-------------------------------------------------------[Build HTML Tables]--------------------------------------------------------
+    # Build Unhealthy Storage Table
 
-# Build Hypervisor Connection Table
+        # Setup HTML Table Section
 
-    # Setup HTML Table Section
+            $unhstorage_html = ”<strong>Hosts with Unhealthy Storage:</strong>`n <br />”
+            $unhstorage_html += ”`n <br />”
 
-        $hvconn_html = ”<strong>Hypervisor Connections:</strong>`n <br />”
-        $hvconn_html += ”`n <br />”
+        # Setup HTML Table & Headings
 
-    # Setup HTML Table & Headings
+            $unhstorage_html += "<table>`n"
+            $unhstorage_html += "<th style='font-weight:bold'>Host</th>"
+            $unhstorage_html += "<th style='font-weight:bold'>Vendor</th>"
+            $unhstorage_html += "<th style='font-weight:bold'>State</th>"
+            $unhstorage_html += "<th style='font-weight:bold'>Name</th>"
+            $unhstorage_html += "<th style='font-weight:bold'>CapacityGB</th>"
+            $unhstorage_html += "<th style='font-weight:bold'>Hypervisor</th>"
 
-        $hvconn_html += "<table>`n"
-        $hvconn_html += "<th style='font-weight:bold'>Name</th>"
-        $hvconn_html += "<th style='font-weight:bold'>User</th>"
-        $hvconn_html += "<th style='font-weight:bold'>Hypervisor</th>"
-        $hvconn_html += "<th style='font-weight:bold'>Version</th>"
-    
-    # Populate Table
-
-        foreach ($hvconn in $hvconns) {
-            $hvconn_html += "<tr>`n"
-            $hvconn_html += "<td>$($hvconn.Name)</td>`n"
-            $hvconn_html += "<td>$($hvconn.User)</td>`n"
-            $hvconn_html += "<td>$($hvconn.Hypervisor)</td>`n"
-            $hvconn_html += "<td>$($hvconn.Version)</td>`n"
-            $hvconn_html += "</tr>`n"
-        }
-    
-    # Close HTML Table
-
-        $hvconn_html += "</table>`n"
-        
-    # Spacing before next HTML section
-
-        $hvconn_html += ”`n <br />”
-
-# Build Unhealthy Storage Table
-
-    # Setup HTML Table Section
-
-        $unhstorage_html = ”<strong>Hosts with Unhealthy Storage:</strong>`n <br />”
-        $unhstorage_html += ”`n <br />”
-
-    # Setup HTML Table & Headings
-
-        $unhstorage_html += "<table>`n"
-        $unhstorage_html += "<th style='font-weight:bold'>Host</th>"
-        $unhstorage_html += "<th style='font-weight:bold'>Vendor</th>"
-        $unhstorage_html += "<th style='font-weight:bold'>State</th>"
-        $unhstorage_html += "<th style='font-weight:bold'>Name</th>"
-        $unhstorage_html += "<th style='font-weight:bold'>CapacityGB</th>"
-        $unhstorage_html += "<th style='font-weight:bold'>Hypervisor</th>"
-
-    # Populate Table
-        if ($unhstorage.count -eq 0) {
-                $unhstorage_html += "<tr>`n"
-                $unhstorage_html += "<td>N/A</td>`n"
-                $unhstorage_html += "<td>N/A</td>`n"
-                $unhstorage_html += "<td>N/A</td>`n"
-                $unhstorage_html += "<td>N/A</td>`n"
-                $unhstorage_html += "<td>N/A</td>`n"
-                $unhstorage_html += "<td>N/A/td>`n"
-                $unhstorage_html += "</tr>`n"
-        } else {
-            foreach ($unhs in $unhstorage) {
-                $unhstorage_html += "<tr>`n"
-                $unhstorage_html += "<td>$($unhs.host)</td>`n"
-                $unhstorage_html += "<td>$($unhs.vendor)</td>`n"
-                $unhstorage_html += "<td>$($unhs.state)</td>`n"
-                $unhstorage_html += "<td>$($unhs.name)</td>`n"
-                $unhstorage_html += "<td>$($unhs.capacitygb)</td>`n"
-                $unhstorage_html += "<td>$($unhs.hypervisor)</td>`n"
-                $unhstorage_html += "</tr>`n"
+        # Populate Table
+            if ($unhstorage.count -eq 0) {
+                    $unhstorage_html += "<tr>`n"
+                    $unhstorage_html += "<td colspan='6'>No Storage Health Issues Found</td> `n"
+                    $unhstorage_html += "</tr>`n"
+            } else {
+                foreach ($unhs in $unhstorage) {
+                    $unhstorage_html += "<tr>`n"
+                    $unhstorage_html += "<td>$($unhs.host)</td>`n"
+                    $unhstorage_html += "<td>$($unhs.vendor)</td>`n"
+                    $unhstorage_html += "<td>$($unhs.state)</td>`n"
+                    $unhstorage_html += "<td>$($unhs.name)</td>`n"
+                    $unhstorage_html += "<td>$($unhs.capacitygb)</td>`n"
+                    $unhstorage_html += "<td>$($unhs.hypervisor)</td>`n"
+                    $unhstorage_html += "</tr>`n"
+                }
             }
-        }
+        
+        # Close HTML Table
+        
+            $unhstorage_html += "</table>`n"
+        
+        # Spacing before next HTML section
+        
+            $unhstorage_html += ”`n <br />”
 
-    # Close HTML Table
+#---------------------------------------------[Check for Incompatible Audio Hardware]----------------------------------------------
 
-        $unhstorage_html += "</table>`n"
+# Get VMs with Incompatible Audio Hardware
 
-    # Spacing before next HTML section
+    # VCSA
 
-        $unhstorage_html += ”`n <br />”
+    $vms = get-vm
+    
+    foreach ($vm in $vms) {
+        $vmdevices = $vm.ExtensionData.Config.Hardware.Device | %{$_.GetType().Name}
+    
+        if ($vmdevices -match 'VirtualHdAudioCard') {
+            $incompathw=  += New-Object -TypeName PSObject -Property @{
+                vm = $vm.name;
+                powerstate = $lun.vendor;
+                device = "VirtualHdAudioCard";
+                hypervisormgr = $vm.Uid.Substring($vm.Uid.IndexOf('@')+1).Split(":")[0];
+            }
+
+    # RHV Ovirt-Engine
+
+        # This only affects VMware, no RHV equivalent
+
+    # Build Incompatible Audio Hardware Table
+
+        # Setup HTML Table Section
+
+            $incompathw_html = ”<strong>VMs with Incompatible Audio Hardware:</strong>`n <br />”
+            $incompathw_html += ”`n <br />”
+
+        # Setup HTML Table & Headings
+
+            $incompathw_html += "<table>`n"
+            $incompathw_html += "<th style='font-weight:bold'>VM</th>"
+            $incompathw_html += "<th style='font-weight:bold'>Power State</th>"
+            $incompathw_html += "<th style='font-weight:bold'>Device</th>"
+            $incompathw_html += "<th style='font-weight:bold'>Hypervisor Manager</th>"
+            
+        # Populate Table
+            if ($incompathw.count -eq 0) {
+                    $incompathw_html += "<tr>`n"
+                    $incompathw_html += "<td colspan='4'>No VMs with Incompatible Audio Hardware</td> `n"
+                    $incompathw_html += "</tr>`n"
+            } else {
+                foreach ($ichw in $incompathw) {
+                    $incompathw_html += "<tr>`n"
+                    $incompathw_html += "<td>$($ichw.vm)</td>`n"
+                    $incompathw_html += "<td>$($ichw.powerstate)</td>`n"
+                    $incompathw_html += "<td>$($ichw.device)</td>`n"
+                    $incompathw_html += "<td>$($ichw.hypervisormgr)</td>`n"
+                    $incompathw_html += "</tr>`n"
+                }
+            }
+
+        # Close HTML Table
+
+            $incompathw_html += "</table>`n"
+
+        # Spacing before next HTML section
+
+            $incompathw_html += ”`n <br />”
 
 #-----------------------------------------------------[Create and Send Email]------------------------------------------------------
 
