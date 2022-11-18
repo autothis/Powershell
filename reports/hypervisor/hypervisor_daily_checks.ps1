@@ -318,6 +318,8 @@
                 device = "VirtualHdAudioCard";
                 hypervisormgr = $vm.Uid.Substring($vm.Uid.IndexOf('@')+1).Split(":")[0];
             }
+        }
+    }
 
     # RHV Ovirt-Engine
 
