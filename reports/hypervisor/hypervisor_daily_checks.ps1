@@ -86,6 +86,13 @@
     $incompathw = @()
     $nicpwronresult = @()
     $vmguesttools = @()
+    $datastorewarn = @()
+    $datastorecrit = @()
+    $datastoreothr = @()
+    $datastorewarns = @()
+    $datastorecrits = @()
+    $datastoreothrs = @()
+    $mntcds = @()
 
 # Create HTML Header
 
@@ -217,11 +224,11 @@
 
 # Get Hosts with Unhealthy Storage
 
-    # VCSA
+    # VMware
 
         $vmhosts = get-vmhost
         foreach ($vmhost in $vmhosts) {
-            $luns = get-vmhost $vmhost | Get-ScsiLun -LunType disk | where {$_.ExtensionData.OperationalState -ne "ok"}
+            $luns = get-vmhost $vmhost | Get-ScsiLun -LunType disk | where-object {$_.ExtensionData.OperationalState -ne "ok"}
             foreach ($lun in $luns) {
                 $unhstorage += New-Object -TypeName PSObject -Property @{
                     host = $vmhost.name;
@@ -229,6 +236,7 @@
                     state = $lun.extensiondata.operationalstate;
                     name = $lun.canonicalname;
                     capacitygb = $lun.capacitygb;
+                    hypervisor = ([System.Uri]$vmhost.ExtensionData.Client.ServiceUrl).Host;
                 }
             }
         }
@@ -274,7 +282,7 @@
             $unhstorage_html += "<th style='font-weight:bold'>State</th>"
             $unhstorage_html += "<th style='font-weight:bold'>Name</th>"
             $unhstorage_html += "<th style='font-weight:bold'>CapacityGB</th>"
-            $unhstorage_html += "<th style='font-weight:bold'>Hypervisor</th>"
+            $unhstorage_html += "<th style='font-weight:bold'>Hypervisor Manager</th>"
 
         # Populate Table
             if ($unhstorage.count -eq 0) {
@@ -306,19 +314,19 @@
 
 # Get VMs with Incompatible Audio Hardware
 
-    # VCSA
+    # VMware
 
     $vms = get-vm
     
     foreach ($vm in $vms) {
-        $vmdevices = $vm.ExtensionData.Config.Hardware.Device | where {$_.GetType().Name}
+        $vmdevices = $vm.ExtensionData.Config.Hardware.Device | where-object {$_.GetType().Name}
     
         if ($vmdevices -match 'VirtualHdAudioCard') {
             $incompathw += New-Object -TypeName PSObject -Property @{
                 vm = $vm.name;
                 powerstate = $lun.vendor;
                 device = "VirtualHdAudioCard";
-                hypervisormgr = $vm.Uid.Substring($vm.Uid.IndexOf('@')+1).Split(":")[0];
+                hypervisormgr = ([System.Uri]$vm.ExtensionData.Client.ServiceUrl).Host;
             }
         }
     }
@@ -368,14 +376,13 @@
 
 #-------------------------------------------[Network Adapters Not Connected at Power On]-------------------------------------------
 
-    # VMware Commands
+    # VMware
 
         $vms = get-vm
         
         foreach ($vm in $vms) {
             $nics = $vm | Get-NetworkAdapter
             foreach ($nic in $nics) {
-                write-host "$nic"
                 if($Nic.ConnectionState.Connected -eq $true -and $nic.ConnectionState.StartConnected -eq $false) {
                 $nicpwronresult += New-Object -TypeName PSObject -Property @{
                     vmname = $nic.Parent;
@@ -385,6 +392,7 @@
                     nicmac = $nic.MacAddress;
                     niccon = $nic.ConnectionState.Connected;
                     nicpwrcon = $nic.ConnectionState.StartConnected;
+                    hvmgr = ([System.Uri]$vm.ExtensionData.Client.ServiceUrl).Host;
                     }
                 }
             }
@@ -411,6 +419,7 @@
             $nicpwron_html += "    <th style='font-weight:bold'>MAC Address</th>"
             $nicpwron_html += "    <th style='font-weight:bold'>NIC Connected</th>"
             $nicpwron_html += "    <th style='font-weight:bold'>NIC Connect at Power On</th>"
+            $nicpwron_html += "    <th style='font-weight:bold'>Hypervisor Manager</th>"
 
         # Populate Table
 
@@ -423,6 +432,7 @@
                 $nicpwron_html += "    <td>$($nicpwronres.nicmac)</td>`n"
                 $nicpwron_html += "    <td>$($nicpwronres.niccon)</td>`n"
                 $nicpwron_html += "    <td>$($nicpwronres.nicpwrcon)</td>`n"
+                $nicpwron_html += "    <td>$($nicpwronres.hvmgr)</td>`n"
                 $nicpwron_html += "  </tr>`n"
             }
 
@@ -438,7 +448,7 @@
 
     # VMware
     
-        $vms = get-vm | where {$_.PowerState -ne "PoweredOff" -and $_.extensiondata.Guest.toolsstatus -ne "toolsok"}
+        $vms = get-vm | where-object {$_.PowerState -ne "PoweredOff" -and $_.extensiondata.Guest.toolsstatus -ne "toolsok"}
 
         foreach ($vm in $vms) {
             $vmguesttools += New-Object -TypeName PSObject -Property @{
@@ -469,7 +479,7 @@
             $vmgtools_html += "    <th style='font-weight:bold'>Guest Tools Version</th>"
             $vmgtools_html += "    <th style='font-weight:bold'>Guest Tools Running</th>"
             $vmgtools_html += "    <th style='font-weight:bold'>Guest Tools Version</th>"
-            $vmgtools_html += "    <th style='font-weight:bold'></th>"
+            $vmgtools_html += ”`n <br />”
 
         # Populate Table
 
@@ -485,7 +495,162 @@
 
         # HTML Table Close
 
-            $vmgtools += "</table>`n"
+            $vmgtools_html += "</table>`n"
+
+        # Spacing before next HTML section
+
+            $vmgtools_html += ”`n <br />”
+#-----------------------------------------[Datastores Below Minimum Free Space Threshold]------------------------------------------
+
+    # VMware
+    
+            $datastorewarn = get-datastore | where-object {$_.FreeSpaceGB -lt 300 -and $_.Name -notlike "*log*" -and $_.Name -notlike "*rsc*"}
+                foreach ($dswarn in $datastorewarn) {
+                    $datastorewarns += New-Object -TypeName PSObject -Property @{
+                        dsname = $dswarn.name;
+                        freespacegb = $dswarn.FreeSpaceGB;
+                        capacitygb = $dswarn.CapacityGB;
+                        hvmgr = ([System.Uri]$dswarn.ExtensionData.Client.ServiceUrl).Host;
+                        }
+                }
+            
+            $datastorecrit = get-datastore | where-object {$_.FreeSpaceGB -lt 500 -and $_.FreeSpaceGB -gt 300 -and $_.Name -notlike "*log*" -and $_.Name -notlike "*rsc*"}
+                foreach ($dsvrit in $datastorecrit) {
+                    $datastorecrits += New-Object -TypeName PSObject -Property @{
+                        dsname = $dswarn.name;
+                        freespacegb = $dswarn.FreeSpaceGB;
+                        capacitygb = $dswarn.CapacityGB;
+                        hvmgr = ([System.Uri]$dswarn.ExtensionData.Client.ServiceUrl).Host;
+                        }
+                }
+
+            $datastoreothr = get-datastore | where-object {$_.FreeSpaceGB -lt 50 -and $_.Name -like "*log*" -or $_.Name -like "*rsc*"}
+                foreach ($dsothr in $datastoreothr) {
+                    $datastoreothrs += New-Object -TypeName PSObject -Property @{
+                        dsname = $dswarn.name;
+                        freespacegb = $dswarn.FreeSpaceGB;
+                        capacitygb = $dswarn.CapacityGB;
+                        hvmgr = ([System.Uri]$dswarn.ExtensionData.Client.ServiceUrl).Host;
+                        }
+                }
+
+    # RHV Ovirt-Engine
+
+        # TBD
+
+    # Build VM Guest Tool Issues Table    
+    
+        # Setup HTML Table Section
+
+            $datastore_html = ”<strong>Datastores Below Minimum Free Space Threshold:</strong>`n <br />”
+            $datastore_html += ”`n <br />”
+
+        # Setup HTML Table & Headings
+    
+            $datastore_html = "<table>`n"
+            $datastore_html += "    <th style='font-weight:bold'>Name</th>"
+            $datastore_html += "    <th style='font-weight:bold'>Free Space (GB)</th>"
+            $datastore_html += "    <th style='font-weight:bold'>Capacity (GB)</th>"
+            $datastore_html += "    <th style='font-weight:bold'>Hypervisor Manager</th>"
+            $datastore_html += ”`n <br />”
+
+        # Populate Table
+
+            foreach ($dswarn in $datastorewarns) {
+                $datastore_html += "  <tr>`n"
+                $datastore_html += "    <td>$($dswarn.dsname)</td>`n"
+                $datastore_html += "    <td bgcolor=#FFFF00>$($dswarn.FreeSpaceGB)</td>`n"
+                $datastore_html += "    <td>$($dswarn.CapacityGB)</td>`n"
+                $datastore_html += "    <td>$($dswarn.hvmgr)</td>`n"
+                $datastore_html += "  </tr>`n"
+            }
+
+            foreach ($dscrit in $datastorecrits) {
+                $datastore_html += "  <tr>`n"
+                $datastore_html += "    <td>$($dswarn.dsname)</td>`n"
+                $datastore_html += "    <td bgcolor=#FF0000>$($dswarn.FreeSpaceGB)</td>`n"
+                $datastore_html += "    <td>$($dswarn.CapacityGB)</td>`n"
+                $datastore_html += "    <td>$($dswarn.hvmgr)</td>`n"
+                $datastore_html += "  </tr>`n"
+            }
+
+            foreach ($dsothr in $datastoreothrs) {
+                $datastore_html += "  <tr>`n"
+                $datastore_html += "    <td>$($dswarn.dsname)</td>`n"
+                $datastore_html += "    <td>$($dswarn.FreeSpaceGB)</td>`n"
+                $datastore_html += "    <td>$($dswarn.CapacityGB)</td>`n"
+                $datastore_html += "    <td>$($dswarn.hvmgr)</td>`n"
+                $datastore_html += "  </tr>`n"
+            }
+
+        # HTML Table Close
+
+            $datastore_html += "</table>`n"
+
+        # Spacing before next HTML section
+
+            $datastore_html += ”`n <br />”
+
+#------------------------------------------------------[VMs with mounted CDs]------------------------------------------------------
+
+    # VMware
+
+        $mountedcds = Get-VM | Get-CDDrive | where-object {$_.IsoPath -ne $null}
+        foreach ($mountedcd in $mountedcds) {
+            $isopath = $mountedcd.IsoPath
+            if ($($mountedcd.IsoPath) -eq "[]") {
+                Get-VM $($mountedcd.parent) | Get-CDDRive | Where-Object {$_.IsoPath} | Set-CDDrive -NoMedia -Confirm:$false
+                $isopath = "'[]' (this has automatically been dismounted)"
+            }
+            $mntcds += New-Object -TypeName PSObject -Property @{
+               vmname = $mountedcd.parent;
+               mountedcd = $isopath;
+               hvmgr = ([System.Uri](get-vm | where-object {$_.id -like ($mountedcd.parentid)}).ExtensionData.Client.ServiceUrl).host;
+            }
+        }
+
+    # RHV Ovirt-Engine
+
+        # Some RedHat code goes here
+
+    # Build VM Guest Tool Issues Table    
+    
+        # Setup HTML Table Section
+
+        $mntdiso_html = ”<strong>VMs with mounted CDs:</strong>`n <br />”
+        $mntdiso_html += ”`n <br />”
+
+    # Setup HTML Table & Headings
+
+        $mntdiso_html = "<table>`n"
+        $mntdiso_html += "    <th style='font-weight:bold'>Name</th>"
+        $mntdiso_html += "    <th style='font-weight:bold'>Mounted CD</th>"
+        $mntdiso_html += "    <th style='font-weight:bold'>Hypervisor Manager</th>"
+        $mntdiso_html += ”`n <br />”
+
+    # Populate Table
+
+        foreach ($mntcd in $mntcds) {
+            $mntdiso_html += "  <tr>`n"
+            $mntdiso_html += "    <td>$($mntcd.vmname)</td>`n"
+            $mntdiso_html += "    <td>$($mntcd.mountedcd)</td>`n"
+            $mntdiso_html += "    <td>$($mntcd.hvmgr)</td>`n"
+            $mntdiso_html += "  </tr>`n"
+        }
+
+    # HTML Table Close
+
+        $mntdiso_html += "</table>`n"
+
+    # Spacing before next HTML section
+
+        $mntdiso_html += ”`n <br />”
+
+#------------------------------------------------------[Disconnect vCenters]-------------------------------------------------------
+
+        foreach ($vcenter in $vcenters) {
+             Disconnect-VIServer -Server $vcenter -confirm:$False
+        }
 
 #-----------------------------------------------------[Create and Send Email]------------------------------------------------------
 
@@ -515,6 +680,9 @@
         $msg.Body+=$unhstorage_html
         $msg.Body+=$incompathw_html
         $msg.Body+=$nicpwron_html
+        $msg.Body+=$vmgtools_html
+        $msg.Body+=$datastore_html
+        $msg.Body+=$mntdiso_html
 
     # Send Message
             
@@ -522,7 +690,7 @@
     
     # Debug Message Output
 
-        echo $msg | fl
+        write-output $msg | format-list
 
     # Destroy Message Object
     
