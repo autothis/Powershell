@@ -84,6 +84,8 @@
     $hvconns = @()
     $unhstorage = @()
     $incompathw = @()
+    $nicpwronresult = @()
+    $vmguesttools = @()
 
 # Create HTML Header
 
@@ -221,7 +223,7 @@
         foreach ($vmhost in $vmhosts) {
             $luns = get-vmhost $vmhost | Get-ScsiLun -LunType disk | where {$_.ExtensionData.OperationalState -ne "ok"}
             foreach ($lun in $luns) {
-                $unhstorage =  += New-Object -TypeName PSObject -Property @{
+                $unhstorage += New-Object -TypeName PSObject -Property @{
                     host = $vmhost.name;
                     vendor = $lun.vendor;
                     state = $lun.extensiondata.operationalstate;
@@ -309,10 +311,10 @@
     $vms = get-vm
     
     foreach ($vm in $vms) {
-        $vmdevices = $vm.ExtensionData.Config.Hardware.Device | %{$_.GetType().Name}
+        $vmdevices = $vm.ExtensionData.Config.Hardware.Device | where {$_.GetType().Name}
     
         if ($vmdevices -match 'VirtualHdAudioCard') {
-            $incompathw=  += New-Object -TypeName PSObject -Property @{
+            $incompathw += New-Object -TypeName PSObject -Property @{
                 vm = $vm.name;
                 powerstate = $lun.vendor;
                 device = "VirtualHdAudioCard";
@@ -364,34 +366,170 @@
 
             $incompathw_html += ”`n <br />”
 
+#-------------------------------------------[Network Adapters Not Connected at Power On]-------------------------------------------
+
+    # VMware Commands
+
+        $vms = get-vm
+        
+        foreach ($vm in $vms) {
+            $nics = $vm | Get-NetworkAdapter
+            foreach ($nic in $nics) {
+                write-host "$nic"
+                if($Nic.ConnectionState.Connected -eq $true -and $nic.ConnectionState.StartConnected -eq $false) {
+                $nicpwronresult += New-Object -TypeName PSObject -Property @{
+                    vmname = $nic.Parent;
+                    nicname = $nic.Name;
+                    networkname = $nic.NetworkName;
+                    nictype = $nic.Type;
+                    nicmac = $nic.MacAddress;
+                    niccon = $nic.ConnectionState.Connected;
+                    nicpwrcon = $nic.ConnectionState.StartConnected;
+                    }
+                }
+            }
+        }
+
+    # RHV Ovirt-Engine
+
+        # TBD
+
+    # Build Network Adapters Not Connected at Power On Table
+    
+        # Setup HTML Table Section
+
+            $nicpwron_html = ”<strong>VMs with Network Adapters Not Connected at Power On:</strong>`n <br />”
+            $nicpwron_html += ”`n <br />”
+
+        # Setup HTML Table & Headings
+
+            $nicpwron_html += "<table>`n"
+            $nicpwron_html += "    <th style='font-weight:bold'>Name</th>"
+            $nicpwron_html += "    <th style='font-weight:bold'>Interface</th>"
+            $nicpwron_html += "    <th style='font-weight:bold'>Network Name</th>"
+            $nicpwron_html += "    <th style='font-weight:bold'>NIC Type</th>"
+            $nicpwron_html += "    <th style='font-weight:bold'>MAC Address</th>"
+            $nicpwron_html += "    <th style='font-weight:bold'>NIC Connected</th>"
+            $nicpwron_html += "    <th style='font-weight:bold'>NIC Connect at Power On</th>"
+
+        # Populate Table
+
+            foreach ($nicpwronres in $nicpwronresult) {
+                $nicpwron_html += "  <tr>`n"
+                $nicpwron_html += "    <td>$($nicpwronres.vmname)</td>`n"
+                $nicpwron_html += "    <td>$($nicpwronres.nicname)</td>`n"
+                $nicpwron_html += "    <td>$($nicpwronres.networkname)</td>`n"
+                $nicpwron_html += "    <td>$($nicpwronres.nictype)</td>`n"
+                $nicpwron_html += "    <td>$($nicpwronres.nicmac)</td>`n"
+                $nicpwron_html += "    <td>$($nicpwronres.niccon)</td>`n"
+                $nicpwron_html += "    <td>$($nicpwronres.nicpwrcon)</td>`n"
+                $nicpwron_html += "  </tr>`n"
+            }
+
+        # Close HTML Table
+
+            $nicpwron_html += "</table>`n"
+
+        # Spacing before next HTML section
+
+            $nicpwron_html += ”`n <br />”
+
+#-----------------------------------------------------[VM Guest Tool Issues]-------------------------------------------------------
+
+    # VMware
+    
+        $vms = get-vm | where {$_.PowerState -ne "PoweredOff" -and $_.extensiondata.Guest.toolsstatus -ne "toolsok"}
+
+        foreach ($vm in $vms) {
+            $vmguesttools += New-Object -TypeName PSObject -Property @{
+                vmname = $vm.name;
+                toolsstatus = $vm.extensiondata.Guest.toolsstatus;
+                toolsversion = $vm.extensiondata.Guest.ToolsVersionStatus;
+                toolsrunning = $vm.extensiondata.Guest.ToolsRunningStatus;
+                toolsversionno = $vm.extensiondata.Guest.ToolsVersion;
+                }
+        }
+
+    # RHV Ovirt-Engine
+
+        # TBD
+    
+    # Build VM Guest Tool Issues Table    
+    
+        # Setup HTML Table Section
+
+            $vmgtools_html = ”<strong>VMs with Guest Tool Issues:</strong>`n <br />”
+            $vmgtools_html += ”`n <br />”
+
+        # Setup HTML Table & Headings
+
+            $vmgtools_html += "<table>`n"
+            $vmgtools_html += "    <th style='font-weight:bold'>VM Name</th>"
+            $vmgtools_html += "    <th style='font-weight:bold'>Guest Tools Status</th>"
+            $vmgtools_html += "    <th style='font-weight:bold'>Guest Tools Version</th>"
+            $vmgtools_html += "    <th style='font-weight:bold'>Guest Tools Running</th>"
+            $vmgtools_html += "    <th style='font-weight:bold'>Guest Tools Version</th>"
+            $vmgtools_html += "    <th style='font-weight:bold'></th>"
+
+        # Populate Table
+
+            foreach ($vmguesttool in $vmguesttools) {
+                $vmgtools_html += "  <tr>`n"
+                $vmgtools_html += "    <td>$($vmguesttool.vmname)</td>`n"
+                $vmgtools_html += "    <td>$($vmguesttool.toolsstatus)</td>`n"
+                $vmgtools_html += "    <td>$($vmguesttool.toolsversion)</td>`n"
+                $vmgtools_html += "    <td>$($vmguesttool.toolsrunning)</td>`n"
+                $vmgtools_html += "    <td>$($vmguesttool.toolsversionno)</td>`n"
+                $vmgtools_html += "  </tr>`n"
+            }
+
+        # HTML Table Close
+
+            $vmgtools += "</table>`n"
+
 #-----------------------------------------------------[Create and Send Email]------------------------------------------------------
 
-    $msg = new-object Net.Mail.MailMessage
+    # Create New Message Object
+
+        $msg = new-object Net.Mail.MailMessage
        
-    #From Address
-    $msg.From = $msgfrom
+    # Message Subject
+        
+        $msg.Subject = “VMware Report”
+    
+    # From Address
+        
+        $msg.From = $msgfrom
 
-    #To Address, to add additional recipients, update the array $msgto at the top of this script.
-    foreach ($recipient in $msgto) {
-        $msg.To.Add($recipient)
-        }
+    # To Address, to add additional recipients, update the array $msgto at the top of this script.
+        
+        foreach ($recipient in $msgto) {
+            $msg.To.Add($recipient)
+            }
     
-    #Message Body
-    $msg.IsBodyHtml = $true
-    $msg.Body=$header
-    $msg.Body+=$hvconn_html
-    $msg.Body+=$unhstorage_html
+    # Build Message Body
 
+        $msg.IsBodyHtml = $true
+        $msg.Body=$header
+        $msg.Body+=$hvconn_html
+        $msg.Body+=$unhstorage_html
+        $msg.Body+=$incompathw_html
+        $msg.Body+=$nicpwron_html
+
+    # Send Message
+            
+        $smtp.Send($msg)
     
-    #Message Subject
-    $msg.Subject = “VMware Report”
+    # Debug Message Output
+
+        echo $msg | fl
+
+    # Destroy Message Object
     
-    $smtp.Send($msg)
-    echo $msg | fl
-    $msg.Dispose();
+        $msg.Dispose();
 
 #---------------------------------------------------------[Logging  Stop]----------------------------------------------------------
 
-# Stop Log
+    # Stop Log
 
-    Stop-Transcript
+        Stop-Transcript
