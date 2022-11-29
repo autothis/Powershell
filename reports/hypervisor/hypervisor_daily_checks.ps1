@@ -26,7 +26,16 @@
 
 #---------------------------------------------------------[Initialisations]--------------------------------------------------------
 
+# Import Settings
+
+    $settingsfile = "c:\temp\test.txt"
+    $settings = Get-Content $settingsfile | Out-String | ConvertFrom-StringData
+
+    # Example File Structre: See example_hypervisor_daily_checks_settings.txt file.
+
+
 # Set Error Action to Silently Continue
+    
     $ErrorActionPreference = "SilentlyContinue"
 
 # Import PowerCLI Powershell Modules
@@ -93,6 +102,7 @@
     $datastorecrits = @()
     $datastoreothrs = @()
     $mntcds = @()
+    $snaps = @()
 
 # Create HTML Header
 
@@ -122,24 +132,21 @@
         #    "rhvm02.example.com"
         #    )
 
-        $vcenters = @(
-            "dc3-vcsa01.nowitsolutions.com.au",
-            "dc4-vcsa01.nowitsolutions.com.au"
-            )
+        $vcenters = $settings.vcenters | convertfrom-json
 
-        $rhvmgrs = @(
-            "qld-ndb2-vm-02.mgmt.spirit.net.au",
-            "dc4-rhvm01.nowitsolutions.com.au"
-            )
+        $rhvmgrs = $settings.rhvmgrs | convertfrom-json
 
     # SMTP Settings
     
-        $smtpServer = “smtp1.nowitsolutions.com.au”
-        $smtp = New-Object Net.Mail.SmtpClient($SmtpServer, 25)
-        $msgfrom = "hypervisors@example.com"
+        #$msgfrom = "hypervisors@example.com"
         #$msgto = "user@example.com"
-        $msgto = "jperry@nowitsolutions.com.au"
-    
+        #$smtpServer = “smtp1.example.com”
+        $msgsubj = $settings.msgsubj
+        $msgfrom = $settings.msgfrom
+        $msgto = $settings.msgto | convertfrom-json
+        $smtpServer = $settings.smtpsrv
+        $smtp = New-Object Net.Mail.SmtpClient($SmtpServer, 25)
+        
 #-----------------------------------------------------------[Functions]------------------------------------------------------------
 
 # N/A
@@ -324,7 +331,7 @@
         if ($vmdevices -match 'VirtualHdAudioCard') {
             $incompathw += New-Object -TypeName PSObject -Property @{
                 vm = $vm.name;
-                powerstate = $lun.vendor;
+                powerstate = $vm.powerstate;
                 device = "VirtualHdAudioCard";
                 hypervisormgr = ([System.Uri]$vm.ExtensionData.Client.ServiceUrl).Host;
             }
@@ -353,7 +360,7 @@
         # Populate Table
             if ($incompathw.count -eq 0) {
                     $incompathw_html += "<tr>`n"
-                    $incompathw_html += "<td colspan='4'>No VMs with Incompatible Audio Hardware</td> `n"
+                    $incompathw_html += "<td colspan='4'>No VMs with Incompatible Audio Hardware Found</td> `n"
                     $incompathw_html += "</tr>`n"
             } else {
                 foreach ($ichw in $incompathw) {
@@ -423,6 +430,11 @@
 
         # Populate Table
 
+        if ($nicpwronresult.count -eq 0) {
+            $nicpwron_html += "<tr>`n"
+            $nicpwron_html += "<td colspan='8'>No Network Adapters Not Connected at Power On Found</td> `n"
+            $nicpwron_html += "</tr>`n"
+        } else {
             foreach ($nicpwronres in $nicpwronresult) {
                 $nicpwron_html += "  <tr>`n"
                 $nicpwron_html += "    <td>$($nicpwronres.vmname)</td>`n"
@@ -435,6 +447,7 @@
                 $nicpwron_html += "    <td>$($nicpwronres.hvmgr)</td>`n"
                 $nicpwron_html += "  </tr>`n"
             }
+        }
 
         # Close HTML Table
 
@@ -483,6 +496,11 @@
 
         # Populate Table
 
+        if ($vmguesttools.count -eq 0) {
+            $vmgtools_html += "<tr>`n"
+            $vmgtools_html += "<td colspan='5'>No VM Guest Tool Issues Found</td> `n"
+            $vmgtools_html += "</tr>`n"
+        } else {
             foreach ($vmguesttool in $vmguesttools) {
                 $vmgtools_html += "  <tr>`n"
                 $vmgtools_html += "    <td>$($vmguesttool.vmname)</td>`n"
@@ -492,6 +510,7 @@
                 $vmgtools_html += "    <td>$($vmguesttool.toolsversionno)</td>`n"
                 $vmgtools_html += "  </tr>`n"
             }
+        }
 
         # HTML Table Close
 
@@ -500,6 +519,7 @@
         # Spacing before next HTML section
 
             $vmgtools_html += ”`n <br />”
+
 #-----------------------------------------[Datastores Below Minimum Free Space Threshold]------------------------------------------
 
     # VMware
@@ -524,7 +544,7 @@
                         }
                 }
 
-            $datastoreothr = get-datastore | where-object {$_.FreeSpaceGB -lt 50 -and $_.Name -like "*log*" -or $_.Name -like "*rsc*"}
+            $datastoreothr = get-datastore | where-object {$_.FreeSpaceGB -lt 50 -and $_.Name -like "*log*" -or $_.FreeSpaceGB -lt 50 -and $_.Name -like "*rsc*"}
                 foreach ($dsothr in $datastoreothr) {
                     $datastoreothrs += New-Object -TypeName PSObject -Property @{
                         dsname = $dswarn.name;
@@ -547,7 +567,7 @@
 
         # Setup HTML Table & Headings
     
-            $datastore_html = "<table>`n"
+            $datastore_html += "<table>`n"
             $datastore_html += "    <th style='font-weight:bold'>Name</th>"
             $datastore_html += "    <th style='font-weight:bold'>Free Space (GB)</th>"
             $datastore_html += "    <th style='font-weight:bold'>Capacity (GB)</th>"
@@ -556,6 +576,11 @@
 
         # Populate Table
 
+        if ($datastorewarns.count -eq 0 -and $datastorecrits.count -eq 0 -and $datastoreothrs.count -eq 0) {
+            $datastore_html += "<tr>`n"
+            $datastore_html += "<td colspan='4'>No Datastores Below Minimum Free Space Threshold Found</td> `n"
+            $datastore_html += "</tr>`n"
+        } else {
             foreach ($dswarn in $datastorewarns) {
                 $datastore_html += "  <tr>`n"
                 $datastore_html += "    <td>$($dswarn.dsname)</td>`n"
@@ -567,21 +592,22 @@
 
             foreach ($dscrit in $datastorecrits) {
                 $datastore_html += "  <tr>`n"
-                $datastore_html += "    <td>$($dswarn.dsname)</td>`n"
+                $datastore_html += "    <td>$($dscrit.dsname)</td>`n"
                 $datastore_html += "    <td bgcolor=#FF0000>$($dswarn.FreeSpaceGB)</td>`n"
-                $datastore_html += "    <td>$($dswarn.CapacityGB)</td>`n"
-                $datastore_html += "    <td>$($dswarn.hvmgr)</td>`n"
+                $datastore_html += "    <td>$($dscrit.CapacityGB)</td>`n"
+                $datastore_html += "    <td>$($dscrit.hvmgr)</td>`n"
                 $datastore_html += "  </tr>`n"
             }
 
             foreach ($dsothr in $datastoreothrs) {
                 $datastore_html += "  <tr>`n"
-                $datastore_html += "    <td>$($dswarn.dsname)</td>`n"
-                $datastore_html += "    <td>$($dswarn.FreeSpaceGB)</td>`n"
-                $datastore_html += "    <td>$($dswarn.CapacityGB)</td>`n"
-                $datastore_html += "    <td>$($dswarn.hvmgr)</td>`n"
+                $datastore_html += "    <td>$($dsothr.dsname)</td>`n"
+                $datastore_html += "    <td>$($dsothr.FreeSpaceGB)</td>`n"
+                $datastore_html += "    <td>$($dsothr.CapacityGB)</td>`n"
+                $datastore_html += "    <td>$($dsothr.hvmgr)</td>`n"
                 $datastore_html += "  </tr>`n"
             }
+        }
 
         # HTML Table Close
 
@@ -622,7 +648,7 @@
 
     # Setup HTML Table & Headings
 
-        $mntdiso_html = "<table>`n"
+        $mntdiso_html += "<table>`n"
         $mntdiso_html += "    <th style='font-weight:bold'>Name</th>"
         $mntdiso_html += "    <th style='font-weight:bold'>Mounted CD</th>"
         $mntdiso_html += "    <th style='font-weight:bold'>Hypervisor Manager</th>"
@@ -630,6 +656,11 @@
 
     # Populate Table
 
+    if ($mntcds.count -eq 0) {
+        $mntdiso_html += "<tr>`n"
+        $mntdiso_html += "<td colspan='3'>No VMs with mounted CDs Found</td> `n"
+        $mntdiso_html += "</tr>`n"
+    } else {
         foreach ($mntcd in $mntcds) {
             $mntdiso_html += "  <tr>`n"
             $mntdiso_html += "    <td>$($mntcd.vmname)</td>`n"
@@ -637,6 +668,7 @@
             $mntdiso_html += "    <td>$($mntcd.hvmgr)</td>`n"
             $mntdiso_html += "  </tr>`n"
         }
+    }
 
     # HTML Table Close
 
@@ -646,11 +678,94 @@
 
         $mntdiso_html += ”`n <br />”
 
+#-------------------------------------------------------[VMs with Snapshots]-------------------------------------------------------
+
+    # VMware
+
+        $snapshots = get-vm | get-snapshot
+        foreach ($snapshot in $snapshots) {
+            $snaps += New-Object -TypeName PSObject -Property @{
+                vmname = $snapshot.vm.name;
+                snapname = $snapshot.name;
+                snapcreated = $snapshot.created;
+                snapsizegb = [math]::Round($snapshot.sizegb,2);
+                snapdesc = $snapshot.description;
+                hvmgr = ([System.Uri](get-vm | where-object {$_.id -like ($snapshot.vmid)}).ExtensionData.Client.ServiceUrl).host;
+            }
+        }
+
+    # RHV Ovirt-Engine
+
+        # Some RedHat code goes here
+
+    # Build VMs with Snapshots Table    
+    
+        # Setup HTML Table Section
+
+            $snapshots_html = ”<strong>VMs with Snapshots:</strong>`n <br />”
+            $snapshots_html += ”`n <br />”
+
+        # Setup HTML Table & Headings
+
+            $snapshots_html += "<table>`n"
+            $snapshots_html += "    <th style='font-weight:bold'>VM Name</th>"
+            $snapshots_html += "    <th style='font-weight:bold'>Snapshot Name</th>"
+            $snapshots_html += "    <th style='font-weight:bold'>Snapshot Created</th>"
+            $snapshots_html += "    <th style='font-weight:bold'>Snapshot Size (GB)</th>"
+            $snapshots_html += "    <th style='font-weight:bold'>Snapshot Description</th>"
+            $snapshots_html += "    <th style='font-weight:bold'>Hypervisor Manager</th>"
+            $snapshots_html += ”`n <br />”
+
+        # Populate Table
+
+        if ($snaps.count -eq 0) {
+            $snapshots_html += "<tr>`n"
+            $snapshots_html += "<td colspan='6'>No VMs with Snapshots Found</td> `n"
+            $snapshots_html += "</tr>`n"
+        } else {
+            foreach ($snap in ($snaps | sort-object snapcreated)) {
+                $snapshots_html += "  <tr>`n"
+                $snapshots_html += "    <td>$($snap.vmname)</td>`n"
+                $snapshots_html += "    <td>$($snap.snapname)</td>`n"
+                if ($snap.snapcreated -lt ([DateTime]::Now.AddDays(-1)) -and $snap.snapdesc -notlike '*<RPData*' -and '*/>*') {
+                    $snapshots_html += "    <td bgcolor=#F88379>$($snap.snapcreated)</td>`n"
+                } else {
+                    $snapshots_html += "    <td>$($snap.snapcreated)</td>`n"
+                }
+                $snapshots_html += "    <td>$($snap.snapsizegb)</td>`n"
+                if ($snap.snapdesc -like '*<RPData*' -and '*/>*') {
+                    $snapshots_html += "    <td bgcolor=#F5F5DC>Appears to be a Veeam Replication Snapshot</td>`n"
+                } elseif ([string]::IsNullOrEmpty($snap.snapdesc)) {
+                    $snapshots_html += "    <td bgcolor=#F88379>No Snapshot Description Provided</td>`n"
+                } else {
+                    $snapshots_html += "    <td>$($snap.snapdesc)</td>`n"
+                }
+                $snapshots_html += "    <td>$($snap.hvmgr)</td>`n"
+                $snapshots_html += "  </tr>`n"
+            }
+        }
+
+        # HTML Table Close
+
+            $snapshots_html += "</table>`n"
+
+        # Spacing before next HTML section
+
+            $snapshots_html += ”`n <br />”
+
+#----------------------------------------------------------[Host Alarms]-----------------------------------------------------------
+
+        # TBD
+
+#--------------------------------------------------------[Datastore Alarms]--------------------------------------------------------
+
+        # TBD
+
 #------------------------------------------------------[Disconnect vCenters]-------------------------------------------------------
 
-        foreach ($vcenter in $vcenters) {
-             Disconnect-VIServer -Server $vcenter -confirm:$False
-        }
+        #foreach ($vcenter in $vcenters) {
+        #     Disconnect-VIServer -Server $vcenter -confirm:$False
+        #}
 
 #-----------------------------------------------------[Create and Send Email]------------------------------------------------------
 
@@ -660,7 +775,7 @@
        
     # Message Subject
         
-        $msg.Subject = “VMware Report”
+        $msg.Subject = $msgsubj
     
     # From Address
         
@@ -683,6 +798,8 @@
         $msg.Body+=$vmgtools_html
         $msg.Body+=$datastore_html
         $msg.Body+=$mntdiso_html
+        $msg.Body+=$snapshots_html
+
 
     # Send Message
             
