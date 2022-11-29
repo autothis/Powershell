@@ -85,11 +85,7 @@
 
 # Initialise Arrays
 
-    $datacenters = @()
-    $clusters = @()
-    $hosts = @()
     $vms = @()
-    $results = @()
     $hvconns = @()
     $unhstorage = @()
     $incompathw = @()
@@ -103,6 +99,8 @@
     $datastoreothrs = @()
     $mntcds = @()
     $snaps = @()
+    $halarms = @()
+    $dalarms = @()
 
 # Create HTML Header
 
@@ -111,14 +109,25 @@
     TABLE {border-width: 1px; border-style: solid; border-color: black; border-collapse: collapse;}
     TH {border-width: 1px; padding: 3px; border-style: solid; border-color: black; background-color: #21c465;}
     TD {border-width: 1px; padding: 3px; border-style: solid; border-color: black;}
+    .header {
+        padding: 60px;
+        text-align: center;
+        background: #FFFFFF;
+        color: black;
+        font-size: 45px;
+        line-height: 45px;
+    }
     </style>
+    <div class='header'>
+        <h1>Hypervisor Health Check Report</h1>
+    </div>
     ")
 
 #----------------------------------------------------------[Declarations]----------------------------------------------------------
 
     # General
     
-        $currentdate = Get-Date –f yyyyMMddHHmm
+        # N/A
     
     # Hypervisors
     
@@ -197,8 +206,9 @@
 
         # Setup HTML Table Section
 
-            $hvconn_html = ”<strong>Hypervisor Connections:</strong>`n <br />”
-            $hvconn_html += ”`n <br />”
+        $hvconn_html = ”<strong style='font-size:20px'>vCenter Connections:</strong><br />”
+        $hvconn_html += ”<em>Hypervisors clusters covered by this report.</em><br />”
+        $hvconn_html += ”`n <br />”
 
         # Setup HTML Table & Headings
 
@@ -346,9 +356,11 @@
 
         # Setup HTML Table Section
 
-            $incompathw_html = ”<strong>VMs with Incompatible Audio Hardware:</strong>`n <br />”
+            $incompathw_html = ”<strong style='font-size:20px'>VMs with Incompatible Virtual Hardware (HD Audio):</strong>`n <br />”
+            $incompathw_html += ”<em>Hardware incompatible prevents maintenance within the hypervisor environment preventing automatic rescheduling of the VM.</em><br />”
+            $incompathw_html += ”<em>Manual intervention is required to Maintain service in many circumstances.</em><br />”
             $incompathw_html += ”`n <br />”
-
+        
         # Setup HTML Table & Headings
 
             $incompathw_html += "<table>`n"
@@ -413,7 +425,8 @@
     
         # Setup HTML Table Section
 
-            $nicpwron_html = ”<strong>VMs with Network Adapters Not Connected at Power On:</strong>`n <br />”
+            $nicpwron_html = ”<strong style='font-size:20px'>VMs with NIC Connected, but not Connected at Start Up:</strong>`n <br />”
+            $nicpwron_html += ”<em>VMs that do not have this options ticked, will require manual intervention to re-establish network connectivity, in the event a failure scenario occurs.</em><br />”
             $nicpwron_html += ”`n <br />”
 
         # Setup HTML Table & Headings
@@ -481,7 +494,9 @@
     
         # Setup HTML Table Section
 
-            $vmgtools_html = ”<strong>VMs with Guest Tool Issues:</strong>`n <br />”
+            $vmgtools_html = ”<strong style='font-size:20px'>VMs with VM Guest Tool Issues:</strong>`n <br />”
+            $vmgtools_html += ”<em>Guest tools are installed at the guest layer (Windows, Linux, etc....), these should be updated during regular guest maintenance (patching).</em><br />”
+            $vmgtools_html += ”<em>Guest tools provide a number of functions including, but not limited to, drivers, and enabling advanced features used for backups, and VM management.</em><br />”
             $vmgtools_html += ”`n <br />”
 
         # Setup HTML Table & Headings
@@ -643,40 +658,41 @@
     
         # Setup HTML Table Section
 
-        $mntdiso_html = ”<strong>VMs with mounted CDs:</strong>`n <br />”
-        $mntdiso_html += ”`n <br />”
+            $mntdiso_html = ”<strong style='font-size:20px'>VMs with mounted CDs:</strong>`n <br />”
+            $mntdiso_html += ”<em>Mounted CDs in some cases can prevent automatic rescheduling of the VM and require manual intervention in the event of a failure scenario.</em><br />”
+            $mntdiso_html += ”`n <br />”
 
-    # Setup HTML Table & Headings
+        # Setup HTML Table & Headings
 
-        $mntdiso_html += "<table>`n"
-        $mntdiso_html += "    <th style='font-weight:bold'>Name</th>"
-        $mntdiso_html += "    <th style='font-weight:bold'>Mounted CD</th>"
-        $mntdiso_html += "    <th style='font-weight:bold'>Hypervisor Manager</th>"
-        $mntdiso_html += ”`n <br />”
+            $mntdiso_html += "<table>`n"
+            $mntdiso_html += "    <th style='font-weight:bold'>Name</th>"
+            $mntdiso_html += "    <th style='font-weight:bold'>Mounted CD</th>"
+            $mntdiso_html += "    <th style='font-weight:bold'>Hypervisor Manager</th>"
+            $mntdiso_html += ”`n <br />”
 
-    # Populate Table
+        # Populate Table
 
-    if ($mntcds.count -eq 0) {
-        $mntdiso_html += "<tr>`n"
-        $mntdiso_html += "<td colspan='3'>No VMs with mounted CDs Found</td> `n"
-        $mntdiso_html += "</tr>`n"
-    } else {
-        foreach ($mntcd in $mntcds) {
-            $mntdiso_html += "  <tr>`n"
-            $mntdiso_html += "    <td>$($mntcd.vmname)</td>`n"
-            $mntdiso_html += "    <td>$($mntcd.mountedcd)</td>`n"
-            $mntdiso_html += "    <td>$($mntcd.hvmgr)</td>`n"
-            $mntdiso_html += "  </tr>`n"
+        if ($mntcds.count -eq 0) {
+            $mntdiso_html += "<tr>`n"
+            $mntdiso_html += "<td colspan='3'>No VMs with mounted CDs Found</td> `n"
+            $mntdiso_html += "</tr>`n"
+        } else {
+            foreach ($mntcd in $mntcds) {
+                $mntdiso_html += "  <tr>`n"
+                $mntdiso_html += "    <td>$($mntcd.vmname)</td>`n"
+                $mntdiso_html += "    <td>$($mntcd.mountedcd)</td>`n"
+                $mntdiso_html += "    <td>$($mntcd.hvmgr)</td>`n"
+                $mntdiso_html += "  </tr>`n"
+            }
         }
-    }
 
-    # HTML Table Close
+        # HTML Table Close
 
-        $mntdiso_html += "</table>`n"
+            $mntdiso_html += "</table>`n"
 
-    # Spacing before next HTML section
+        # Spacing before next HTML section
 
-        $mntdiso_html += ”`n <br />”
+            $mntdiso_html += ”`n <br />”
 
 #-------------------------------------------------------[VMs with Snapshots]-------------------------------------------------------
 
@@ -702,7 +718,9 @@
     
         # Setup HTML Table Section
 
-            $snapshots_html = ”<strong>VMs with Snapshots:</strong>`n <br />”
+            $snapshots_html = ”<strong style='font-size:20px'>Current Snapshots:</strong>`n <br />”
+            $snapshots_html += ”<em>Snapshots grow in size the longer they are active and will increasingly impact performance.</em><br />”
+            $snapshots_html += ”<em>Consolidating snapshots can also impact performance and in some cases actually drop the service for a brief period.</em><br />”
             $snapshots_html += ”`n <br />”
 
         # Setup HTML Table & Headings
@@ -755,17 +773,155 @@
 
 #----------------------------------------------------------[Host Alarms]-----------------------------------------------------------
 
-        # TBD
+    # VMware
+
+        $hostalarms = Get-View -ViewType HostSystem | where-object {$_.TriggeredAlarmstate -ne "{}"}
+        foreach ($hostalarm in $hostalarms) {
+            $alarmdef = get-alarmdefinition -id $hostalarm.TriggeredAlarmState.alarm
+            $halarms += New-Object -TypeName PSObject -Property @{
+                hostname = $hostalarm.name;
+                status = $hostalarm.overallstatus;
+                alarm = $hostalarm.TriggeredAlarmState.alarm.tostring();
+                alarmname = $alarmdef.name
+                alarmdesc = $alarmdef.description
+                hvmgr = ([System.Uri]($hostalarm).Client.ServiceUrl).host;
+            }
+        }
+
+    # RHV Ovirt-Engine
+
+        # Some RedHat code goes here
+
+    # Build VM Guest Tool Issues Table    
+    
+        # Setup HTML Table Section
+
+            $halarms_html = ”<strong>Host Alarms:</strong>`n <br />”
+            $halarms_html += ”`n <br />”
+
+        # Setup HTML Table & Headings
+
+            $halarms_html += "<table>`n"
+            $halarms_html += "    <th style='font-weight:bold'>Name</th>"
+            $halarms_html += "    <th style='font-weight:bold'>Status</th>"
+            $halarms_html += "    <th style='font-weight:bold'>Alarm</th>"
+            $halarms_html += "    <th style='font-weight:bold'>Alarm Name</th>"
+            $halarms_html += "    <th style='font-weight:bold'>Alarm Description</th>"
+            $halarms_html += "    <th style='font-weight:bold'>Hypervisor Manager</th>"
+            $halarms_html += ”`n <br />”
+
+        # Populate Table
+
+        if ($halarms.count -eq 0) {
+            $halarms_html += "<tr>`n"
+            $halarms_html += "<td colspan='6'>No Host Alarms Found</td> `n"
+            $halarms_html += "</tr>`n"
+        } else {
+            foreach ($halarm in $halarms) {
+                $halarms_html += "  <tr>`n"
+                $halarms_html += "    <td>$($halarm.hostname)</td>`n"
+                if ($halarm.status -eq "red") {
+                    $halarms_html += "    <td bgcolor=#F88379>$($halarm.status)</td>`n"
+                } elseif ($halarm.status -eq "yellow") {
+                    $halarms_html += "    <td bgcolor=#F5F5DC>$($halarm.status)</td>`n"
+                } else {
+                    $halarms_html += "    <td>$($halarm.status)</td>`n"
+                }
+                $halarms_html += "    <td>$($halarm.alarm)</td>`n"
+                $halarms_html += "    <td>$($halarm.alarmname)</td>`n"
+                $halarms_html += "    <td>$($halarm.alarmdesc)</td>`n"
+                $halarms_html += "    <td>$($halarm.hvmgr)</td>`n"
+                $halarms_html += "  </tr>`n"
+            }
+        }
+
+        # HTML Table Close
+
+            $halarms_html += "</table>`n"
+
+        # Spacing before next HTML section
+
+            $halarms_html += ”`n <br />”
 
 #--------------------------------------------------------[Datastore Alarms]--------------------------------------------------------
 
-        # TBD
+
+    # VMware
+
+        $datastorealarms = Get-View -ViewType Datastore | where-object {$_.TriggeredAlarmstate -ne "{}"}
+        foreach ($datastorealarm in $datastorealarms) {
+            $alarmdef = get-alarmdefinition -id $datastorealarm.TriggeredAlarmState.alarm
+            $dalarms += New-Object -TypeName PSObject -Property @{
+                dsname = $datastorealarm.name;
+                status = $datastorealarm.overallstatus;
+                alarm = $datastorealarm.TriggeredAlarmState.alarm.tostring();
+                alarmname = $alarmdef.name
+                alarmdesc = $alarmdef.description
+                hvmgr = ([System.Uri]($hostalarm).Client.ServiceUrl).host;
+            }
+        }
+
+    # RHV Ovirt-Engine
+
+        # Some RedHat code goes here
+
+    # Build VM Guest Tool Issues Table    
+
+        # Setup HTML Table Section
+
+            $dalarms_html = ”<strong>Datastore Alarms:</strong>`n <br />”
+            $dalarms_html += ”`n <br />”
+
+        # Setup HTML Table & Headings
+
+            $dalarms_html += "<table>`n"
+            $dalarms_html += "    <th style='font-weight:bold'>Name</th>"
+            $dalarms_html += "    <th style='font-weight:bold'>Status</th>"
+            $dalarms_html += "    <th style='font-weight:bold'>Alarm</th>"
+            $dalarms_html += "    <th style='font-weight:bold'>Alarm Name</th>"
+            $dalarms_html += "    <th style='font-weight:bold'>Alarm Description</th>"
+            $dalarms_html += "    <th style='font-weight:bold'>Hypervisor Manager</th>"
+            $dalarms_html += ”`n <br />”
+
+        # Populate Table
+
+        if ($dalarms.count -eq 0) {
+            $dalarms_html += "<tr>`n"
+            $dalarms_html += "<td colspan='6'>No Host Alarms Found</td> `n"
+            $dalarms_html += "</tr>`n"
+        } else {
+            foreach ($halarm in $halarms) {
+                $dalarms_html += "  <tr>`n"
+                $dalarms_html += "    <td>$($dalarm.dsname)</td>`n"
+                if ($dalarm.status -eq "red") {
+                    $dalarms_html += "    <td bgcolor=#F88379>$($dalarm.status)</td>`n"
+                } elseif ($dalarm.status -eq "yellow") {
+                    $dalarms_html += "    <td bgcolor=#F5F5DC>$($dalarm.status)</td>`n"
+                } else {
+                    $dalarms_html += "    <td>$($dalarm.status)</td>`n"
+                }
+                $dalarms_html += "    <td>$($dalarm.alarm)</td>`n"
+                $dalarms_html += "    <td>$($dalarm.alarmname)</td>`n"
+                $dalarms_html += "    <td>$($dalarm.alarmdesc)</td>`n"
+                $dalarms_html += "    <td>$($dalarm.hvmgr)</td>`n"
+                $dalarms_html += "  </tr>`n"
+            }
+        }
+
+        # HTML Table Close
+
+            $dalarms_html += "</table>`n"
+
+        # Spacing before next HTML section
+
+            $dalarms_html += ”`n <br />”
+
 
 #------------------------------------------------------[Disconnect vCenters]-------------------------------------------------------
 
-        #foreach ($vcenter in $vcenters) {
-        #     Disconnect-VIServer -Server $vcenter -confirm:$False
-        #}
+    foreach ($vcenter in $vcenters) {
+         Disconnect-VIServer -Server $vcenter -confirm:$False
+    }
 
 #-----------------------------------------------------[Create and Send Email]------------------------------------------------------
 
@@ -799,6 +955,8 @@
         $msg.Body+=$datastore_html
         $msg.Body+=$mntdiso_html
         $msg.Body+=$snapshots_html
+        $msg.Body+=$halarms_html
+        $msg.Body+=$dalarms_html
 
 
     # Send Message
