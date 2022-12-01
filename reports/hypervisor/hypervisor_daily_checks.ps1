@@ -28,7 +28,7 @@
 
 # Import Settings
 
-    $settingsfile = "c:\temp\test.txt"
+    $settingsfile = "c:\temp\hypervisor_daily_check.config"
     $settings = Get-Content $settingsfile | Out-String | ConvertFrom-StringData
 
     # Example File Structre: See example_hypervisor_daily_checks_settings.txt file.
@@ -85,6 +85,7 @@
 
 # Initialise Arrays
 
+    $rhvauth = @()
     $vms = @()
     $hvconns = @()
     $unhstorage = @()
@@ -98,10 +99,11 @@
     $datastorecrits = @()
     $datastoreothrs = @()
     $mntcds = @()
+    $snapshotvms = @()
     $snaps = @()
     $halarms = @()
     $dalarms = @()
-
+    
 # Create HTML Header
 
     $Header = @("
@@ -155,25 +157,83 @@
         $msgto = $settings.msgto | convertfrom-json
         $smtpServer = $settings.smtpsrv
         $smtp = New-Object Net.Mail.SmtpClient($SmtpServer, 25)
+
+    # Get Account for Hypervisor Authentication
+
+        # All
+
+            [Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime]
+            $vaultresource="hypervisor-query" # Be sure to store hypervisor readonly credentials in password vault with this resource name
+            $vault = New-Object Windows.Security.Credentials.PasswordVault
+            $username = ( $vault.RetrieveAll() | Where-Object { $_.Resource -eq $vaultresource } | Select-Object -First 1 ).UserName
+            $user = ($username.split("@"))[0]
+            $domain = ($username.split("@"))[1]
+            $password = ( $vault.Retrieve( $vaultresource, $username ) | Select-Object -First 1 ).Password
+            $securepass = ConvertTo-SecureString -String $password -AsPlainText -Force
+                
+        # VMware
+            
+            $credential = New-Object System.Management.Automation.PSCredential ($username, $securepass)
         
+        # RHV Ovirt-Engine 
+
+            foreach ($rhvmgr in $rhvmgrs) {
+                $AuthPayload = "grant_type=password&scope=ovirt-app-api&username=$user%40$domain&password=$password"
+                $AuthHeaders = @{"Accept" = "application/json"}
+                $URI = "https://$rhvmgr/ovirt-engine/sso/oauth/token"
+                $AuthResponse = Invoke-WebRequest -Uri $URI -Method Post -body $AuthPayload -Headers $AuthHeaders -ContentType 'application/x-www-form-urlencoded'
+                $AuthToken = ((($AuthResponse.Content) -split '"')[3])
+                $rhvauth += New-Object -TypeName PSObject -Property @{
+                    rhvmgr = $rhvmgr;
+                    token = $AuthToken;
+                    headers = @{
+                        Authorization="Bearer $Authtoken"
+                    }
+                }
+            }
+
+        # Clean Up
+
+            Remove-Variable password # So that we don't have the unsecure password lingering in memory
+
+#----------------------------------------------------------[Gather Data]-----------------------------------------------------------
+
+    # VMware
+
+        # TBD
+
+    # RHV Ovirt-Engine 
+
+        # Fields to Follow
+        
+        #    $rhvfollow = 'cdroms,nics,diskattachments,snapshots,tags'
+        
+        ## Gather Data
+    #
+        #    foreach ($rhvmgr in $rhvmgrs) {
+#
+        #        # Get Hosts Data
+#
+        #            $rhvallhosts += (invoke-restmethod -uri "https://$rhvmgr/ovirt-engine/api/hosts" -Headers $headers).hosts.host
+#
+        #        # Get Storage Domains Data
+#
+        #            $rhvallstoragedomains += (invoke-restmethod -uri "https://$rhvmgr/ovirt-engine/api/storagedomains" -Headers $headers).storage_domains.storage_domain
+        #    
+        #        # Get VM Data
+#
+        #            $rhvvms += (invoke-restmethod -uri "https://$rhvmgr/ovirt-engine/api/vms" -Headers $headers).vms.vm
+        #            foreach ($rhvvm in $rhvvms) {
+        #            	$rhvallvms += (invoke-restmethod -uri "https://$rhvmgr/ovirt-engine/api/vms/$($rhvvm.id)?follow=$rhvfollow" -Headers $headers).vm
+        #            }
+#
+        #    }
+
 #-----------------------------------------------------------[Functions]------------------------------------------------------------
 
-# N/A
+    # N/A
 
 #-----------------------------------------------------[Connect to Hypervisors]-----------------------------------------------------
-
-# Get Account for Hypervisor Authentication
-
-    [Windows.Security.Credentials.PasswordVault,Windows.Security.Credentials,ContentType=WindowsRuntime]
-    $vaultresource="hypervisor-query" # Be sure to store hypervisor readonly credentials in password vault with this resource name
-    $vault = New-Object Windows.Security.Credentials.PasswordVault
-    $username = ( $vault.RetrieveAll() | Where-Object { $_.Resource -eq $vaultresource } | Select-Object -First 1 ).UserName
-    $password = ( $vault.Retrieve( $vaultresource, $username ) | Select-Object -First 1 ).Password
-    $securepass = ConvertTo-SecureString -String $password -AsPlainText -Force
-    $credential = New-Object System.Management.Automation.PSCredential ($username, $securepass)
-    Remove-Variable password # So that we don't have the unsecure password lingering in memory
-
-# Connect to Hypervisor
 
     # VCSAs
 
@@ -184,20 +244,20 @@
                 $hvconns += New-Object -TypeName PSObject -Property @{
                     name = $vcsaconn.Name;
                     user = $vcsaconn.User;
-                    hypervisor = "vCenter"
-                    version = $vcsaconn.version
+                    hypervisor = "VMware vCenter";
+                    version = "$($vcsaconn.version)" + "." + "$($vcsaconn.build)";
                 }
         }
 
     # RHV Ovirt-Engine (not required, but closest equivilent and a good test, if this step fails, others are likely to as well)
 
-        foreach ($rhvmgr in $rhvmgrs) {
-            $rhvmgrconn = invoke-restmethod -uri "https://$rhvmgr/ovirt-engine/api" -credential $credential
-            $rhvmgrusr = invoke-restmethod -uri "https://$rhvmgr$($rhvmgrconn.api.authenticated_user.href)" -credential $credential
+        foreach ($rhvmgr in $rhvauth) {
+            $rhvmgrconn = invoke-restmethod -uri "https://$($rhvmgr.rhvmgr)/ovirt-engine/api" -headers $rhvmgr.headers
+            $rhvmgrusr = invoke-restmethod -uri "https://$($rhvmgr.rhvmgr)$($rhvmgrconn.api.authenticated_user.href)" -headers $rhvmgr.headers
             $hvconns += New-Object -TypeName PSObject -Property @{
-                name = $rhvmgr;
+                name = $rhvmgr.rhvmgr;
                 user = $rhvmgrusr.user.principal;
-                hypervisor = $rhvmgrconn.api.product_info.name
+                hypervisor = $rhvmgrconn.api.product_info.name;
                 version = $rhvmgrconn.api.product_info.version.full_version;
             }
         }
@@ -288,7 +348,9 @@
 
         # Setup HTML Table Section
 
-            $unhstorage_html = ”<strong>Hosts with Unhealthy Storage:</strong>`n <br />”
+            $unhstorage_html = ”<strong style='font-size:20px'>Hosts with Unhealthy Storage:</strong>`n <br />”
+            $unhstorage_html += ”<em>List of storage presented to Hosts in an unhealthy state.</em><br />”
+            $unhstorage_html += ”<em>Manual intervention is required, this may affect host stability or failover capabilities.</em><br />”
             $unhstorage_html += ”`n <br />”
 
         # Setup HTML Table & Headings
@@ -419,7 +481,27 @@
 
     # RHV Ovirt-Engine
 
-        # TBD
+        foreach ($rhvmgr in $rhvauth) {
+            $rhvvms = (invoke-restmethod -uri "https://$($rhvmgr.rhvmgr)/ovirt-engine/api/vms" -Headers $rhvmgr.headers).vms.vm
+            foreach ($rhvvm in $rhvvms) {
+                $nics = (invoke-restmethod -uri "https://$($rhvmgr.rhvmgr)/ovirt-engine/api/vms/$($rhvvm.id)/nics" -Headers $rhvmgr.headers).nics.nic
+                foreach ($nic in $nics) {
+                    $netadapter = (invoke-restmethod -uri "https://$($rhvmgr.rhvmgr)/ovirt-engine/api/vms/$($rhvvm.id)/nics/$($nic.id)" -Headers $rhvmgr.headers).nic
+                    if (($netadapter.linked -eq 'true' -and $netadapter.plugged -eq 'false') -or ($netadapter.linked -eq 'false' -and $netadapter.plugged -eq 'true')) {
+                        $nicpwronresult += New-Object -TypeName PSObject -Property @{
+                            vmname = $rhvvm.name;
+                            nicname = $netadapter.Name;
+                            networkname = (invoke-restmethod -uri "https://$($rhvmgr.rhvmgr)/ovirt-engine/api/vnicprofiles/$($netadapter.vnic_profile.id)" -Headers $rhvmgr.headers).vnic_profile.name;
+                            nictype = $netadapter.interface;
+                            nicmac = $netadapter.mac.address;
+                            niccon = $netadapter.linked;
+                            nicpwrcon = $netadapter.plugged;
+                            hvmgr = $rhvmgr.rhvmgr;
+                        }
+                    }
+                }
+            }
+        }
 
     # Build Network Adapters Not Connected at Power On Table
     
@@ -427,6 +509,9 @@
 
             $nicpwron_html = ”<strong style='font-size:20px'>VMs with NIC Connected, but not Connected at Start Up:</strong>`n <br />”
             $nicpwron_html += ”<em>VMs that do not have this options ticked, will require manual intervention to re-establish network connectivity, in the event a failure scenario occurs.</em><br />”
+            $nicpwron_html += ”<em>RedHat doesnt have the same option, but it does have the option to have the NIC 'Plugged In' but without link, which is included here.</em><br />”
+            $nicpwron_html += ”<em>'NIC Connected' = 'Link'</em><br />”
+            $nicpwron_html += ”<em>'NIC Connect at Power On' = 'Plugged In'</em><br />”
             $nicpwron_html += ”`n <br />”
 
         # Setup HTML Table & Headings
@@ -577,7 +662,9 @@
     
         # Setup HTML Table Section
 
-            $datastore_html = ”<strong>Datastores Below Minimum Free Space Threshold:</strong>`n <br />”
+            $datastore_html = ”<strong style='font-size:20px'>Datastores Below Minimum Free Space Threshold:</strong>`n <br />”
+            $datastore_html += ”<em>List of datastores below the minimum free space thresholds, less than 500GB warning, less than 300GB is critical.</em><br />”
+            $datastore_html += ”<em>Non VM datastores (RSC, LOG, etc....) are monitored for free space below 50GB.</em><br />”
             $datastore_html += ”`n <br />”
 
         # Setup HTML Table & Headings
@@ -698,7 +785,10 @@
 
     # VMware
 
+        # Get Snapshots
         $snapshots = get-vm | get-snapshot
+
+        # Add Results to $snaps Array
         foreach ($snapshot in $snapshots) {
             $snaps += New-Object -TypeName PSObject -Property @{
                 vmname = $snapshot.vm.name;
@@ -712,7 +802,44 @@
 
     # RHV Ovirt-Engine
 
-        # Some RedHat code goes here
+        # Get Snapshots
+        foreach ($rhvmgr in $rhvauth) {
+            $snapshotvms = @()
+            $rhvvms = (invoke-restmethod -uri "https://$($rhvmgr.rhvmgr)/ovirt-engine/api/vms" -Headers $rhvmgr.headers).vms.vm
+            foreach ($rhvvm in $rhvvms) {
+                $snapshotvms += (invoke-restmethod -uri "https://$($rhvmgr.rhvmgr)/ovirt-engine/api/vms/$($rhvvm.id)?follow=diskattachments,snapshots" -Headers $rhvmgr.headers).vm | where-object {$_.snapshots.snapshot.description -ne 'Active VM'}
+            }
+            foreach ($snapshot in ($snapshotvms.snapshots.snapshot | where-object {$_.description -ne 'Active VM'})) {
+                
+                # Calculate Snapshot Size
+                $disks = (invoke-restmethod -uri "https://$($rhvmgr.rhvmgr)/ovirt-engine/api/vms/$($snapshot.vm.id)/snapshots/$($snapshot.id)/disks" -Headers $rhvmgr.headers).disks.disk
+                $snapsize = $null
+                $snapdesc = $null
+                foreach ($disk in $disks) {
+                    $disksnap = (invoke-restmethod -uri "https://$($rhvmgr.rhvmgr)/ovirt-engine/api/disks/$($disks.id)/disksnapshots" -Headers $rhvmgr.headers).disk_snapshots.disk_snapshot | where-object {$_.snapshot.id -eq $($snapshot.id)}
+                   	$snapsize += [long]$disksnap.actual_size
+                    if ($disks.id.count -le 1) {
+                        $snapdesc = "$($disk.alias)"
+                    } else {
+                        if ($null -eq $snapdesc) {
+                            $snapdesc = "$($disk.alias)"
+                        } else {
+                            $snapdesc =  "$($snapdesc)" + ", " + "$($disk.alias)"
+                        }
+                    }
+                }
+
+                # Add Results to $snaps Array
+                $snaps += New-Object -TypeName PSObject -Property @{
+                    vmname = $snapshot.vm.name;
+                    snapname = $snapshot.description;
+                    snapcreated = [datetime]$snapshot.date;
+                    snapsizegb = [math]::Round($($snapsize/1GB),2);
+                    snapdesc = $snapdesc;
+                    hvmgr = $rhvmgr.rhvmgr;
+                }
+            }
+        }    
 
     # Build VMs with Snapshots Table    
     
@@ -796,7 +923,8 @@
     
         # Setup HTML Table Section
 
-            $halarms_html = ”<strong>Host Alarms:</strong>`n <br />”
+            $halarms_html = ”<strong style='font-size:20px'>Host Alarms:</strong>`n <br />”
+            $halarms_html += ”<em>List of hosts with active alarms.</em><br />”
             $halarms_html += ”`n <br />”
 
         # Setup HTML Table & Headings
@@ -857,7 +985,7 @@
                 alarm = $datastorealarm.TriggeredAlarmState.alarm.tostring();
                 alarmname = $alarmdef.name
                 alarmdesc = $alarmdef.description
-                hvmgr = ([System.Uri]($hostalarm).Client.ServiceUrl).host;
+                hvmgr = ([System.Uri]($datastorealarm).Client.ServiceUrl).host;
             }
         }
 
@@ -869,7 +997,8 @@
 
         # Setup HTML Table Section
 
-            $dalarms_html = ”<strong>Datastore Alarms:</strong>`n <br />”
+            $dalarms_html = ”<strong style='font-size:20px'>Datastore Alarms:</strong>`n <br />”
+            $dalarms_html += ”<em>List of datastores with active alarms.</em><br />”
             $dalarms_html += ”`n <br />”
 
         # Setup HTML Table & Headings
@@ -887,10 +1016,10 @@
 
         if ($dalarms.count -eq 0) {
             $dalarms_html += "<tr>`n"
-            $dalarms_html += "<td colspan='6'>No Host Alarms Found</td> `n"
+            $dalarms_html += "<td colspan='6'>No Datastore Alarms Found</td> `n"
             $dalarms_html += "</tr>`n"
         } else {
-            foreach ($halarm in $halarms) {
+            foreach ($dalarm in $dalarms) {
                 $dalarms_html += "  <tr>`n"
                 $dalarms_html += "    <td>$($dalarm.dsname)</td>`n"
                 if ($dalarm.status -eq "red") {
@@ -948,14 +1077,23 @@
         $msg.IsBodyHtml = $true
         $msg.Body=$header
         $msg.Body+=$hvconn_html
+        $msg.Body+=”`n <br />”
         $msg.Body+=$unhstorage_html
+        $msg.Body+=”`n <br />”
         $msg.Body+=$incompathw_html
+        $msg.Body+=”`n <br />”
         $msg.Body+=$nicpwron_html
+        $msg.Body+=”`n <br />”
         $msg.Body+=$vmgtools_html
+        $msg.Body+=”`n <br />”
         $msg.Body+=$datastore_html
+        $msg.Body+=”`n <br />”
         $msg.Body+=$mntdiso_html
+        $msg.Body+=”`n <br />”
         $msg.Body+=$snapshots_html
+        $msg.Body+=”`n <br />”
         $msg.Body+=$halarms_html
+        $msg.Body+=”`n <br />”
         $msg.Body+=$dalarms_html
 
 
