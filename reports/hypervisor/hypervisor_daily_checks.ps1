@@ -26,104 +26,104 @@
 
 #---------------------------------------------------------[Initialisations]--------------------------------------------------------
 
-# Import Settings
+    # Import Settings
 
-    $settingsfile = "c:\temp\hypervisor_daily_check.config"
-    $settings = Get-Content $settingsfile | Out-String | ConvertFrom-StringData
+        $settingsfile = "c:\temp\hypervisor_daily_check.config"
+        $settings = Get-Content $settingsfile | Out-String | ConvertFrom-StringData
 
-    # Example File Structre: See example_hypervisor_daily_checks_settings.txt file.
+        # Example File Structre: See example_hypervisor_daily_checks_settings.config file.
 
 
-# Set Error Action to Silently Continue
-    
-    $ErrorActionPreference = "SilentlyContinue"
+    # Set Error Action to Silently Continue
 
-# Import PowerCLI Powershell Modules
+        $ErrorActionPreference = "SilentlyContinue"
 
-    Get-Module -Name VMware* -ListAvailable | Import-Module
-    Set-PowerCLIConfiguration -InvalidCertificateAction Ignore -Confirm:$false
-    Set-PowerCLIConfiguration -ParticipateInCeip $false -Confirm:$false
-    Set-PowerCLIConfiguration -DefaultVIServerMode multiple -Confirm:$false
+    # Import PowerCLI Powershell Modules
 
-# Enforce TLS Version
+        Get-Module -Name VMware* -ListAvailable | Import-Module
+        Set-PowerCLIConfiguration -InvalidCertificateAction Ignore -Confirm:$false
+        Set-PowerCLIConfiguration -ParticipateInCeip $false -Confirm:$false
+        Set-PowerCLIConfiguration -DefaultVIServerMode multiple -Confirm:$false
 
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    # Enforce TLS Version
 
-# SSL Error Handling & Bypass
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-    if (-not ([System.Management.Automation.PSTypeName]'ServerCertificateValidationCallback').Type)
-    {
-    $certCallback = @"
-        using System;
-        using System.Net;
-        using System.Net.Security;
-        using System.Security.Cryptography.X509Certificates;
-        public class ServerCertificateValidationCallback
+    # SSL Error Handling & Bypass
+
+        if (-not ([System.Management.Automation.PSTypeName]'ServerCertificateValidationCallback').Type)
         {
-            public static void Ignore()
+        $certCallback = @"
+            using System;
+            using System.Net;
+            using System.Net.Security;
+            using System.Security.Cryptography.X509Certificates;
+            public class ServerCertificateValidationCallback
             {
-                if(ServicePointManager.ServerCertificateValidationCallback ==null)
+                public static void Ignore()
                 {
-                    ServicePointManager.ServerCertificateValidationCallback += 
-                        delegate
-                        (
-                            Object obj, 
-                            X509Certificate certificate, 
-                            X509Chain chain, 
-                            SslPolicyErrors errors
-                        )
-                        {
-                            return true;
-                        };
+                    if(ServicePointManager.ServerCertificateValidationCallback ==null)
+                    {
+                        ServicePointManager.ServerCertificateValidationCallback += 
+                            delegate
+                            (
+                                Object obj, 
+                                X509Certificate certificate, 
+                                X509Chain chain, 
+                                SslPolicyErrors errors
+                            )
+                            {
+                                return true;
+                            };
+                    }
                 }
             }
-        }
 "@ # I can't tab this line in, it is driving me crazy!!!  It is a limitation of 'here-strings'.
-        Add-Type $certCallback
-    }
-    [ServerCertificateValidationCallback]::Ignore()
+            Add-Type $certCallback
+        }
+        [ServerCertificateValidationCallback]::Ignore()
 
-# Initialise Arrays
+    # Initialise Arrays
 
-    $rhvauth = @()
-    $vms = @()
-    $hvconns = @()
-    $unhstorage = @()
-    $incompathw = @()
-    $nicpwronresult = @()
-    $vmguesttools = @()
-    $datastorewarn = @()
-    $datastorecrit = @()
-    $datastoreothr = @()
-    $datastorewarns = @()
-    $datastorecrits = @()
-    $datastoreothrs = @()
-    $mntcds = @()
-    $snapshotvms = @()
-    $snaps = @()
-    $halarms = @()
-    $dalarms = @()
-    
-# Create HTML Header
+        $rhvauth = @()
+        $vms = @()
+        $hvconns = @()
+        $unhstorage = @()
+        $incompathw = @()
+        $nicpwronresult = @()
+        $vmguesttools = @()
+        $datastorewarn = @()
+        $datastorecrit = @()
+        $datastoreothr = @()
+        $datastorewarns = @()
+        $datastorecrits = @()
+        $datastoreothrs = @()
+        $mntcds = @()
+        $snapshotvms = @()
+        $snaps = @()
+        $halarms = @()
+        $dalarms = @()
 
-    $Header = @("
-    <style>
-    TABLE {border-width: 1px; border-style: solid; border-color: black; border-collapse: collapse;}
-    TH {border-width: 1px; padding: 3px; border-style: solid; border-color: black; background-color: #21c465;}
-    TD {border-width: 1px; padding: 3px; border-style: solid; border-color: black;}
-    .header {
-        padding: 60px;
-        text-align: center;
-        background: #FFFFFF;
-        color: black;
-        font-size: 45px;
-        line-height: 45px;
-    }
-    </style>
-    <div class='header'>
-        <h1>Hypervisor Health Check Report</h1>
-    </div>
-    ")
+    # Create HTML Header
+
+        $Header = @("
+        <style>
+        TABLE {border-width: 1px; border-style: solid; border-color: black; border-collapse: collapse;}
+        TH {border-width: 1px; padding: 3px; border-style: solid; border-color: black; background-color: #21c465;}
+        TD {border-width: 1px; padding: 3px; border-style: solid; border-color: black;}
+        .header {
+            padding: 60px;
+            text-align: center;
+            background: #FFFFFF;
+            color: black;
+            font-size: 45px;
+            line-height: 45px;
+        }
+        </style>
+        <div class='header'>
+            <h1>Hypervisor Health Check Report</h1>
+        </div>
+        ")
 
 #----------------------------------------------------------[Declarations]----------------------------------------------------------
 
@@ -266,9 +266,9 @@
 
         # Setup HTML Table Section
 
-        $hvconn_html = ”<strong style='font-size:20px'>vCenter Connections:</strong><br />”
-        $hvconn_html += ”<em>Hypervisors clusters covered by this report.</em><br />”
-        $hvconn_html += ”`n <br />”
+            $hvconn_html = ”<strong style='font-size:20px'>vCenter Connections:</strong><br />”
+            $hvconn_html += ”<em>Hypervisors clusters covered by this report.</em><br />”
+            $hvconn_html += ”`n <br />”
 
         # Setup HTML Table & Headings
 
@@ -395,20 +395,20 @@
 
     # VMware
 
-    $vms = get-vm
-    
-    foreach ($vm in $vms) {
-        $vmdevices = $vm.ExtensionData.Config.Hardware.Device | where-object {$_.GetType().Name}
-    
-        if ($vmdevices -match 'VirtualHdAudioCard') {
-            $incompathw += New-Object -TypeName PSObject -Property @{
-                vm = $vm.name;
-                powerstate = $vm.powerstate;
-                device = "VirtualHdAudioCard";
-                hypervisormgr = ([System.Uri]$vm.ExtensionData.Client.ServiceUrl).Host;
+        $vms = get-vm
+            
+        foreach ($vm in $vms) {
+            $vmdevices = $vm.ExtensionData.Config.Hardware.Device | where-object {$_.GetType().Name}
+        
+            if ($vmdevices -match 'VirtualHdAudioCard') {
+                $incompathw += New-Object -TypeName PSObject -Property @{
+                    vm = $vm.name;
+                    powerstate = $vm.powerstate;
+                    device = "VirtualHdAudioCard";
+                    hypervisormgr = ([System.Uri]$vm.ExtensionData.Client.ServiceUrl).Host;
+                }
             }
         }
-    }
 
     # RHV Ovirt-Engine
 
@@ -528,24 +528,24 @@
 
         # Populate Table
 
-        if ($nicpwronresult.count -eq 0) {
-            $nicpwron_html += "<tr>`n"
-            $nicpwron_html += "<td colspan='8'>No Network Adapters Not Connected at Power On Found</td> `n"
-            $nicpwron_html += "</tr>`n"
-        } else {
-            foreach ($nicpwronres in $nicpwronresult) {
-                $nicpwron_html += "  <tr>`n"
-                $nicpwron_html += "    <td>$($nicpwronres.vmname)</td>`n"
-                $nicpwron_html += "    <td>$($nicpwronres.nicname)</td>`n"
-                $nicpwron_html += "    <td>$($nicpwronres.networkname)</td>`n"
-                $nicpwron_html += "    <td>$($nicpwronres.nictype)</td>`n"
-                $nicpwron_html += "    <td>$($nicpwronres.nicmac)</td>`n"
-                $nicpwron_html += "    <td>$($nicpwronres.niccon)</td>`n"
-                $nicpwron_html += "    <td>$($nicpwronres.nicpwrcon)</td>`n"
-                $nicpwron_html += "    <td>$($nicpwronres.hvmgr)</td>`n"
-                $nicpwron_html += "  </tr>`n"
+            if ($nicpwronresult.count -eq 0) {
+                $nicpwron_html += "<tr>`n"
+                $nicpwron_html += "<td colspan='8'>No Network Adapters Not Connected at Power On Found</td> `n"
+                $nicpwron_html += "</tr>`n"
+            } else {
+                foreach ($nicpwronres in $nicpwronresult) {
+                    $nicpwron_html += "  <tr>`n"
+                    $nicpwron_html += "    <td>$($nicpwronres.vmname)</td>`n"
+                    $nicpwron_html += "    <td>$($nicpwronres.nicname)</td>`n"
+                    $nicpwron_html += "    <td>$($nicpwronres.networkname)</td>`n"
+                    $nicpwron_html += "    <td>$($nicpwronres.nictype)</td>`n"
+                    $nicpwron_html += "    <td>$($nicpwronres.nicmac)</td>`n"
+                    $nicpwron_html += "    <td>$($nicpwronres.niccon)</td>`n"
+                    $nicpwron_html += "    <td>$($nicpwronres.nicpwrcon)</td>`n"
+                    $nicpwron_html += "    <td>$($nicpwronres.hvmgr)</td>`n"
+                    $nicpwron_html += "  </tr>`n"
+                }
             }
-        }
 
         # Close HTML Table
 
@@ -559,22 +559,61 @@
 
     # VMware
     
-        $vms = get-vm | where-object {$_.PowerState -ne "PoweredOff" -and $_.extensiondata.Guest.toolsstatus -ne "toolsok"}
+        $vms = get-vm | where-object {$_.PowerState -ne "PoweredOff" -and $_.extensiondata.Guest.toolsstatus -ne "toolsok" -and $_.extensiondata.Guest.ToolsVersionStatus -ne "guestToolsUnmanaged"}
 
         foreach ($vm in $vms) {
             $vmguesttools += New-Object -TypeName PSObject -Property @{
                 vmname = $vm.name;
-                toolsstatus = $vm.extensiondata.Guest.toolsstatus;
-                toolsversion = $vm.extensiondata.Guest.ToolsVersionStatus;
-                toolsrunning = $vm.extensiondata.Guest.ToolsRunningStatus;
-                toolsversionno = $vm.extensiondata.Guest.ToolsVersion;
-                }
+                toolsstatus = if (($vm.extensiondata.Guest.toolsstatus) -eq "toolsOld") {
+                        "Guest Agent Out of Date"
+                    } elseif (($vm.extensiondata.Guest.toolsstatus) -eq "toolsNotInstalled") {
+                        "Guest Agent Not Installed"
+                    } elseif (($vm.extensiondata.Guest.toolsstatus) -eq "toolsNotRunning") {
+                        "Guest Agent Not Running"
+                    } else {
+                        $vm.extensiondata.Guest.toolsstatus
+                    };
+                toolsrunning = if (($vm.extensiondata.Guest.ToolsRunningStatus) -eq "guestToolsNotRunning") {
+                        "Not Running"
+                    } elseif (($vm.extensiondata.Guest.ToolsRunningStatus) -eq "guestToolsRunning") {
+                        "Running"
+                    } else {
+                        $vm.extensiondata.Guest.ToolsRunningStatus
+                    };
+                toolsversionno = if (($vm.extensiondata.Guest.ToolsVersion) -eq "0") {
+                        "N/A"
+                    } else {
+                        $vm.extensiondata.Guest.ToolsVersion
+                    };
+                hvmgr = ([System.Uri]$vm.ExtensionData.Client.ServiceUrl).Host;
+            }
         }
 
     # RHV Ovirt-Engine
 
-        # TBD
-    
+        foreach ($rhvmgr in $rhvauth) {
+            $vmguests = (invoke-restmethod -uri "https://$($rhvmgr.rhvmgr)/ovirt-engine/api/vms?follow=applications" -Headers $rhvmgr.headers).vms.vm
+            foreach ($vmguest in ($vmguests | where-object {($_.applications.application.name).count -eq 0})) {
+                $vmguesttools += New-Object -TypeName PSObject -Property @{
+                    vmname = $vmguest.name;
+                    toolsstatus = if (($vmguest.applications.application.name).count -ge 1) {
+                            "Guest Agent Installed"
+                        } elseif (($vmguest.applications.application.name).count -eq 0) {
+                            "Guest Agent Not Installed"
+                        };
+                    toolsrunning = "N/A";
+                    toolsversionno = if (($vmguest.applications.application.name).count -eq 1) {
+                            $vmguest.applications.application.name
+                        } elseif (($vmguest.applications.application.name).count -gt 1) {
+                            $vmguest.applications.application.name[1]
+                        } elseif (($vmguest.applications.application.name).count -eq 0) {
+                            "N/A"
+                        };
+                    hvmgr = $rhvmgr.rhvmgr;
+                }
+            }
+        }
+
     # Build VM Guest Tool Issues Table    
     
         # Setup HTML Table Section
@@ -589,28 +628,28 @@
             $vmgtools_html += "<table>`n"
             $vmgtools_html += "    <th style='font-weight:bold'>VM Name</th>"
             $vmgtools_html += "    <th style='font-weight:bold'>Guest Tools Status</th>"
-            $vmgtools_html += "    <th style='font-weight:bold'>Guest Tools Version</th>"
             $vmgtools_html += "    <th style='font-weight:bold'>Guest Tools Running</th>"
             $vmgtools_html += "    <th style='font-weight:bold'>Guest Tools Version</th>"
+            $nicpwron_html += "    <th style='font-weight:bold'>Hypervisor Manager</th>"
             $vmgtools_html += ”`n <br />”
 
         # Populate Table
 
-        if ($vmguesttools.count -eq 0) {
-            $vmgtools_html += "<tr>`n"
-            $vmgtools_html += "<td colspan='5'>No VM Guest Tool Issues Found</td> `n"
-            $vmgtools_html += "</tr>`n"
-        } else {
-            foreach ($vmguesttool in $vmguesttools) {
-                $vmgtools_html += "  <tr>`n"
-                $vmgtools_html += "    <td>$($vmguesttool.vmname)</td>`n"
-                $vmgtools_html += "    <td>$($vmguesttool.toolsstatus)</td>`n"
-                $vmgtools_html += "    <td>$($vmguesttool.toolsversion)</td>`n"
-                $vmgtools_html += "    <td>$($vmguesttool.toolsrunning)</td>`n"
-                $vmgtools_html += "    <td>$($vmguesttool.toolsversionno)</td>`n"
-                $vmgtools_html += "  </tr>`n"
+            if ($vmguesttools.count -eq 0) {
+                $vmgtools_html += "<tr>`n"
+                $vmgtools_html += "<td colspan='5'>No VM Guest Tool Issues Found</td> `n"
+                $vmgtools_html += "</tr>`n"
+            } else {
+                foreach ($vmguesttool in $vmguesttools) {
+                    $vmgtools_html += "  <tr>`n"
+                    $vmgtools_html += "    <td>$($vmguesttool.vmname)</td>`n"
+                    $vmgtools_html += "    <td>$($vmguesttool.toolsstatus)</td>`n"
+                    $vmgtools_html += "    <td>$($vmguesttool.toolsrunning)</td>`n"
+                    $vmgtools_html += "    <td>$($vmguesttool.toolsversionno)</td>`n"
+                    $vmgtools_html += "    <td>$($vmguesttool.hvmgr)</td>`n"
+                    $vmgtools_html += "  </tr>`n"
+                }
             }
-        }
 
         # HTML Table Close
 
@@ -624,35 +663,45 @@
 
     # VMware
     
-            $datastorewarn = get-datastore | where-object {$_.FreeSpaceGB -lt 300 -and $_.Name -notlike "*log*" -and $_.Name -notlike "*rsc*"}
-                foreach ($dswarn in $datastorewarn) {
-                    $datastorewarns += New-Object -TypeName PSObject -Property @{
-                        dsname = $dswarn.name;
-                        freespacegb = $dswarn.FreeSpaceGB;
-                        capacitygb = $dswarn.CapacityGB;
-                        hvmgr = ([System.Uri]$dswarn.ExtensionData.Client.ServiceUrl).Host;
-                        }
-                }
-            
-            $datastorecrit = get-datastore | where-object {$_.FreeSpaceGB -lt 500 -and $_.FreeSpaceGB -gt 300 -and $_.Name -notlike "*log*" -and $_.Name -notlike "*rsc*"}
-                foreach ($dsvrit in $datastorecrit) {
-                    $datastorecrits += New-Object -TypeName PSObject -Property @{
-                        dsname = $dswarn.name;
-                        freespacegb = $dswarn.FreeSpaceGB;
-                        capacitygb = $dswarn.CapacityGB;
-                        hvmgr = ([System.Uri]$dswarn.ExtensionData.Client.ServiceUrl).Host;
-                        }
-                }
-
-            $datastoreothr = get-datastore | where-object {$_.FreeSpaceGB -lt 50 -and $_.Name -like "*log*" -or $_.FreeSpaceGB -lt 50 -and $_.Name -like "*rsc*"}
-                foreach ($dsothr in $datastoreothr) {
-                    $datastoreothrs += New-Object -TypeName PSObject -Property @{
-                        dsname = $dswarn.name;
-                        freespacegb = $dswarn.FreeSpaceGB;
-                        capacitygb = $dswarn.CapacityGB;
-                        hvmgr = ([System.Uri]$dswarn.ExtensionData.Client.ServiceUrl).Host;
-                        }
-                }
+        #$datastorewarn = get-datastore | where-object {$_.FreeSpaceGB -lt 300 -and $_.Name -notlike "*log*" -and $_.Name -notlike "*rsc*"}
+        #    foreach ($dswarn in $datastorewarn) {
+        #        $datastorewarns += New-Object -TypeName PSObject -Property @{
+        #            dsname = $dswarn.name;
+        #            freespacegb = $dswarn.FreeSpaceGB;
+        #            capacitygb = $dswarn.CapacityGB;
+        #            hvmgr = ([System.Uri]$dswarn.ExtensionData.Client.ServiceUrl).Host;
+        #            }
+        #    }
+        #
+        #$datastorecrit = get-datastore | where-object {$_.FreeSpaceGB -lt 500 -and $_.FreeSpaceGB -gt 300 -and $_.Name -notlike "*log*" -and $_.Name -notlike "*rsc*"}
+        #    foreach ($dsvrit in $datastorecrit) {
+        #        $datastorecrits += New-Object -TypeName PSObject -Property @{
+        #            dsname = $dswarn.name;
+        #            freespacegb = $dswarn.FreeSpaceGB;
+        #            capacitygb = $dswarn.CapacityGB;
+        #            hvmgr = ([System.Uri]$dswarn.ExtensionData.Client.ServiceUrl).Host;
+        #            }
+        #    }
+#
+        #$datastoreothr = get-datastore | where-object {$_.FreeSpaceGB -lt 50 -and $_.Name -like "*log*" -or $_.FreeSpaceGB -lt 50 -and $_.Name -like "*rsc*"}
+        #    foreach ($dsothr in $datastoreothr) {
+        #        $datastoreothrs += New-Object -TypeName PSObject -Property @{
+        #            dsname = $dswarn.name;
+        #            freespacegb = $dswarn.FreeSpaceGB;
+        #            capacitygb = $dswarn.CapacityGB;
+        #            hvmgr = ([System.Uri]$dswarn.ExtensionData.Client.ServiceUrl).Host;
+        #            }
+        #    }
+        
+        $datastorefreegbs = get-datastore | where-object {$_.FreeSpaceGB -lt 500}
+            foreach ($datastorefreegb in $datastorefreegbs) {
+                $datastorefree += New-Object -TypeName PSObject -Property @{
+                    dsname = $datastorefreegb.name;
+                    freespacegb = $datastorefreegb.FreeSpaceGB;
+                    capacitygb = $datastorefreegb.CapacityGB;
+                    hvmgr = ([System.Uri]$datastorefreegb.ExtensionData.Client.ServiceUrl).Host;
+                    }
+            }
 
     # RHV Ovirt-Engine
 
@@ -678,38 +727,53 @@
 
         # Populate Table
 
-        if ($datastorewarns.count -eq 0 -and $datastorecrits.count -eq 0 -and $datastoreothrs.count -eq 0) {
-            $datastore_html += "<tr>`n"
-            $datastore_html += "<td colspan='4'>No Datastores Below Minimum Free Space Threshold Found</td> `n"
-            $datastore_html += "</tr>`n"
-        } else {
-            foreach ($dswarn in $datastorewarns) {
-                $datastore_html += "  <tr>`n"
-                $datastore_html += "    <td>$($dswarn.dsname)</td>`n"
-                $datastore_html += "    <td bgcolor=#FFFF00>$($dswarn.FreeSpaceGB)</td>`n"
-                $datastore_html += "    <td>$($dswarn.CapacityGB)</td>`n"
-                $datastore_html += "    <td>$($dswarn.hvmgr)</td>`n"
-                $datastore_html += "  </tr>`n"
+            if ($datastorefree.count -eq 0) {
+                $datastore_html += "<tr>`n"
+                $datastore_html += "<td colspan='4'>No Datastores Below Minimum Free Space Threshold Found</td> `n"
+                $datastore_html += "</tr>`n"
+            } else {
+                foreach ($dsfree in $datastorefree) {
+                    $datastore_html += "  <tr>`n"
+                    $datastore_html += "    <td>$($dsfree.dsname)</td>`n"
+                    $datastore_html += if ($dsfree.FreeSpaceGB -lt 300 -and $dsfree.Name -notlike "*log*" -and $dsfree.Name -notlike "*rsc*") {
+                            "    <td bgcolor=#FF0000>$($dsfree.FreeSpaceGB)</td>`n"
+                        } elseif ($dsfree.FreeSpaceGB -gt 300 -and $dsfree.FreeSpaceGB -lt 500 -and $dsfree.Name -notlike "*log*" -and $dsfree.Name -notlike "*rsc*") {
+                            "    <td bgcolor=#FFFF00>$($dsfree.FreeSpaceGB)</td>`n"
+                        } elseif (($dsfree.FreeSpaceGB -lt 50 -and $dsfree.Name -like "*log*") -or ($dsfree.FreeSpaceGB -lt 50 -and $dsfree.Name -like "*rsc*")) {
+                            "    <td>$($dsfree.FreeSpaceGB)</td>`n"
+                        }
+                    $datastore_html += "    <td>$($dsfree.CapacityGB)</td>`n"
+                    $datastore_html += "    <td>$($dsfree.hvmgr)</td>`n"
+                    $datastore_html += "  </tr>`n"
+                }
+                
+                #foreach ($dswarn in $datastorewarns) {
+                #    $datastore_html += "  <tr>`n"
+                #    $datastore_html += "    <td>$($dswarn.dsname)</td>`n"
+                #    $datastore_html += "    <td bgcolor=#FFFF00>$($dswarn.FreeSpaceGB)</td>`n"
+                #    $datastore_html += "    <td>$($dswarn.CapacityGB)</td>`n"
+                #    $datastore_html += "    <td>$($dswarn.hvmgr)</td>`n"
+                #    $datastore_html += "  </tr>`n"
+                #}
+#
+                #foreach ($dscrit in $datastorecrits) {
+                #    $datastore_html += "  <tr>`n"
+                #    $datastore_html += "    <td>$($dscrit.dsname)</td>`n"
+                #    $datastore_html += "    <td bgcolor=#FF0000>$($dswarn.FreeSpaceGB)</td>`n"
+                #    $datastore_html += "    <td>$($dscrit.CapacityGB)</td>`n"
+                #    $datastore_html += "    <td>$($dscrit.hvmgr)</td>`n"
+                #    $datastore_html += "  </tr>`n"
+                #}
+#
+                #foreach ($dsothr in $datastoreothrs) {
+                #    $datastore_html += "  <tr>`n"
+                #    $datastore_html += "    <td>$($dsothr.dsname)</td>`n"
+                #    $datastore_html += "    <td>$($dsothr.FreeSpaceGB)</td>`n"
+                #    $datastore_html += "    <td>$($dsothr.CapacityGB)</td>`n"
+                #    $datastore_html += "    <td>$($dsothr.hvmgr)</td>`n"
+                #    $datastore_html += "  </tr>`n"
+                #}
             }
-
-            foreach ($dscrit in $datastorecrits) {
-                $datastore_html += "  <tr>`n"
-                $datastore_html += "    <td>$($dscrit.dsname)</td>`n"
-                $datastore_html += "    <td bgcolor=#FF0000>$($dswarn.FreeSpaceGB)</td>`n"
-                $datastore_html += "    <td>$($dscrit.CapacityGB)</td>`n"
-                $datastore_html += "    <td>$($dscrit.hvmgr)</td>`n"
-                $datastore_html += "  </tr>`n"
-            }
-
-            foreach ($dsothr in $datastoreothrs) {
-                $datastore_html += "  <tr>`n"
-                $datastore_html += "    <td>$($dsothr.dsname)</td>`n"
-                $datastore_html += "    <td>$($dsothr.FreeSpaceGB)</td>`n"
-                $datastore_html += "    <td>$($dsothr.CapacityGB)</td>`n"
-                $datastore_html += "    <td>$($dsothr.hvmgr)</td>`n"
-                $datastore_html += "  </tr>`n"
-            }
-        }
 
         # HTML Table Close
 
@@ -759,19 +823,19 @@
 
         # Populate Table
 
-        if ($mntcds.count -eq 0) {
-            $mntdiso_html += "<tr>`n"
-            $mntdiso_html += "<td colspan='3'>No VMs with mounted CDs Found</td> `n"
-            $mntdiso_html += "</tr>`n"
-        } else {
-            foreach ($mntcd in $mntcds) {
-                $mntdiso_html += "  <tr>`n"
-                $mntdiso_html += "    <td>$($mntcd.vmname)</td>`n"
-                $mntdiso_html += "    <td>$($mntcd.mountedcd)</td>`n"
-                $mntdiso_html += "    <td>$($mntcd.hvmgr)</td>`n"
-                $mntdiso_html += "  </tr>`n"
+            if ($mntcds.count -eq 0) {
+                $mntdiso_html += "<tr>`n"
+                $mntdiso_html += "<td colspan='3'>No VMs with mounted CDs Found</td> `n"
+                $mntdiso_html += "</tr>`n"
+            } else {
+                foreach ($mntcd in $mntcds) {
+                    $mntdiso_html += "  <tr>`n"
+                    $mntdiso_html += "    <td>$($mntcd.vmname)</td>`n"
+                    $mntdiso_html += "    <td>$($mntcd.mountedcd)</td>`n"
+                    $mntdiso_html += "    <td>$($mntcd.hvmgr)</td>`n"
+                    $mntdiso_html += "  </tr>`n"
+                }
             }
-        }
 
         # HTML Table Close
 
@@ -863,32 +927,32 @@
 
         # Populate Table
 
-        if ($snaps.count -eq 0) {
-            $snapshots_html += "<tr>`n"
-            $snapshots_html += "<td colspan='6'>No VMs with Snapshots Found</td> `n"
-            $snapshots_html += "</tr>`n"
-        } else {
-            foreach ($snap in ($snaps | sort-object snapcreated)) {
-                $snapshots_html += "  <tr>`n"
-                $snapshots_html += "    <td>$($snap.vmname)</td>`n"
-                $snapshots_html += "    <td>$($snap.snapname)</td>`n"
-                if ($snap.snapcreated -lt ([DateTime]::Now.AddDays(-1)) -and $snap.snapdesc -notlike '*<RPData*' -and '*/>*') {
-                    $snapshots_html += "    <td bgcolor=#F88379>$($snap.snapcreated)</td>`n"
-                } else {
-                    $snapshots_html += "    <td>$($snap.snapcreated)</td>`n"
+            if ($snaps.count -eq 0) {
+                $snapshots_html += "<tr>`n"
+                $snapshots_html += "<td colspan='6'>No VMs with Snapshots Found</td> `n"
+                $snapshots_html += "</tr>`n"
+            } else {
+                foreach ($snap in ($snaps | sort-object snapcreated)) {
+                    $snapshots_html += "  <tr>`n"
+                    $snapshots_html += "    <td>$($snap.vmname)</td>`n"
+                    $snapshots_html += "    <td>$($snap.snapname)</td>`n"
+                    if ($snap.snapcreated -lt ([DateTime]::Now.AddDays(-1)) -and $snap.snapdesc -notlike '*<RPData*' -and '*/>*') {
+                        $snapshots_html += "    <td bgcolor=#F88379>$($snap.snapcreated)</td>`n"
+                    } else {
+                        $snapshots_html += "    <td>$($snap.snapcreated)</td>`n"
+                    }
+                    $snapshots_html += "    <td>$($snap.snapsizegb)</td>`n"
+                    if ($snap.snapdesc -like '*<RPData*' -and '*/>*') {
+                        $snapshots_html += "    <td bgcolor=#F5F5DC>Appears to be a Veeam Replication Snapshot</td>`n"
+                    } elseif ([string]::IsNullOrEmpty($snap.snapdesc)) {
+                        $snapshots_html += "    <td bgcolor=#F88379>No Snapshot Description Provided</td>`n"
+                    } else {
+                        $snapshots_html += "    <td>$($snap.snapdesc)</td>`n"
+                    }
+                    $snapshots_html += "    <td>$($snap.hvmgr)</td>`n"
+                    $snapshots_html += "  </tr>`n"
                 }
-                $snapshots_html += "    <td>$($snap.snapsizegb)</td>`n"
-                if ($snap.snapdesc -like '*<RPData*' -and '*/>*') {
-                    $snapshots_html += "    <td bgcolor=#F5F5DC>Appears to be a Veeam Replication Snapshot</td>`n"
-                } elseif ([string]::IsNullOrEmpty($snap.snapdesc)) {
-                    $snapshots_html += "    <td bgcolor=#F88379>No Snapshot Description Provided</td>`n"
-                } else {
-                    $snapshots_html += "    <td>$($snap.snapdesc)</td>`n"
-                }
-                $snapshots_html += "    <td>$($snap.hvmgr)</td>`n"
-                $snapshots_html += "  </tr>`n"
             }
-        }
 
         # HTML Table Close
 
@@ -1014,28 +1078,28 @@
 
         # Populate Table
 
-        if ($dalarms.count -eq 0) {
-            $dalarms_html += "<tr>`n"
-            $dalarms_html += "<td colspan='6'>No Datastore Alarms Found</td> `n"
-            $dalarms_html += "</tr>`n"
-        } else {
-            foreach ($dalarm in $dalarms) {
-                $dalarms_html += "  <tr>`n"
-                $dalarms_html += "    <td>$($dalarm.dsname)</td>`n"
-                if ($dalarm.status -eq "red") {
-                    $dalarms_html += "    <td bgcolor=#F88379>$($dalarm.status)</td>`n"
-                } elseif ($dalarm.status -eq "yellow") {
-                    $dalarms_html += "    <td bgcolor=#F5F5DC>$($dalarm.status)</td>`n"
-                } else {
-                    $dalarms_html += "    <td>$($dalarm.status)</td>`n"
+            if ($dalarms.count -eq 0) {
+                $dalarms_html += "<tr>`n"
+                $dalarms_html += "<td colspan='6'>No Datastore Alarms Found</td> `n"
+                $dalarms_html += "</tr>`n"
+            } else {
+                foreach ($dalarm in $dalarms) {
+                    $dalarms_html += "  <tr>`n"
+                    $dalarms_html += "    <td>$($dalarm.dsname)</td>`n"
+                    if ($dalarm.status -eq "red") {
+                        $dalarms_html += "    <td bgcolor=#F88379>$($dalarm.status)</td>`n"
+                    } elseif ($dalarm.status -eq "yellow") {
+                        $dalarms_html += "    <td bgcolor=#F5F5DC>$($dalarm.status)</td>`n"
+                    } else {
+                        $dalarms_html += "    <td>$($dalarm.status)</td>`n"
+                    }
+                    $dalarms_html += "    <td>$($dalarm.alarm)</td>`n"
+                    $dalarms_html += "    <td>$($dalarm.alarmname)</td>`n"
+                    $dalarms_html += "    <td>$($dalarm.alarmdesc)</td>`n"
+                    $dalarms_html += "    <td>$($dalarm.hvmgr)</td>`n"
+                    $dalarms_html += "  </tr>`n"
                 }
-                $dalarms_html += "    <td>$($dalarm.alarm)</td>`n"
-                $dalarms_html += "    <td>$($dalarm.alarmname)</td>`n"
-                $dalarms_html += "    <td>$($dalarm.alarmdesc)</td>`n"
-                $dalarms_html += "    <td>$($dalarm.hvmgr)</td>`n"
-                $dalarms_html += "  </tr>`n"
             }
-        }
 
         # HTML Table Close
 
